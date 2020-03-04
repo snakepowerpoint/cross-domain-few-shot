@@ -7,21 +7,21 @@ class PrototypeNet(object):
     def __init__(self):
         pass
 
-    def feature_extractor(self, inputs, reuse=False):
+    def feature_extractor(self, inputs, is_training, reuse=False):
         with tf.variable_scope('extractor', reuse=reuse):
-            x = self.conv_block(inputs, 64, 'conv_block_1')
-            x = self.conv_block(x, 64, 'conv_block_2')
-            x = self.conv_block(x, 64, 'conv_block_3')
-            x = self.conv_block(x, 64, 'conv_block_4')
+            x = self.conv_block(inputs, 64, is_training, 'conv_block_1')
+            x = self.conv_block(x, 64, is_training, 'conv_block_2')
+            x = self.conv_block(x, 64, is_training, 'conv_block_3')
+            x = self.conv_block(x, 64, is_training, 'conv_block_4')
             x = tf.contrib.layers.flatten(x)
             return x
 
-    def conv_block(self, inputs, out_channels, name):
+    def conv_block(self, inputs, out_channels, is_training, name):
         with tf.variable_scope(name):
             x = tf.layers.conv2d(inputs, out_channels, kernel_size=(3, 3), padding='same')
-            x = tf.contrib.layers.batch_norm(x, center=True, scale=True, updates_collections=None)
+            x = tf.layers.batch_normalization(x, training=is_training)
             x = tf.nn.relu(x)
-            x = tf.contrib.layers.max_pool2d(x, 2)
+            x = tf.layers.max_pooling2d(x, pool_size=2, strides=2)
             return x
 
     def get_prototype(self, feature, n_shot):

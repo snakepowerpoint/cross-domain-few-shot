@@ -26,7 +26,7 @@ parser.add_argument('--n_way', default=5, type=int)
 parser.add_argument('--n_shot', default=5, type=int)
 parser.add_argument('--n_query', default=15, type=int)
 
-parser.add_argument('--lr', default=1e-3, type=float)
+parser.add_argument('--lr', default=1e-4, type=float)
 parser.add_argument('--n_iter', default=20000, type=int)
 
 
@@ -58,6 +58,8 @@ def main(args):
     
     query_b_y = tf.placeholder(tf.int64, [None, None])  # e.g. [5, 15]
     
+    is_training = tf.placeholder(tf.bool)
+
     # reshape
     support_a_reshape = tf.reshape(support_a, [n_way * n_shot, img_h, img_w, 3])
     query_a_reshape = tf.reshape(query_a, [n_way * n_query, img_h, img_w, 3])
@@ -67,10 +69,10 @@ def main(args):
     # feature extractor
     protonet = PrototypeNet()
 
-    support_a_feature = protonet.feature_extractor(support_a_reshape)
-    query_a_feature = protonet.feature_extractor(query_a_reshape, reuse=True)
-    support_b_feature = protonet.feature_extractor(support_b_reshape, reuse=True)
-    query_b_feature = protonet.feature_extractor(query_b_reshape, reuse=True)
+    support_a_feature = protonet.feature_extractor(support_a_reshape, is_training)
+    query_a_feature = protonet.feature_extractor(query_a_reshape, is_training, reuse=True)
+    support_b_feature = protonet.feature_extractor(support_b_reshape, is_training, reuse=True)
+    query_b_feature = protonet.feature_extractor(query_b_reshape, is_training, reuse=True)
 
     # get prototype
     prototype_a = protonet.get_prototype(support_a_feature, n_shot=n_shot)
@@ -87,7 +89,7 @@ def main(args):
 
     # optimizer
     global_step = tf.Variable(0, trainable=False, name='global_step')
-    rate = tf.train.inverse_time_decay(args.lr, global_step, decay_steps=1, decay_rate=5e-5)
+    rate = tf.train.inverse_time_decay(args.lr, global_step, decay_steps=2000, decay_rate=5e-1)
     optimizer = tf.train.AdamOptimizer(rate)
     train_op = optimizer.minimize(ce_loss, global_step=global_step)
     
@@ -135,7 +137,8 @@ def main(args):
                 query_a: task_a['query'],
                 support_b: task_b['support'],
                 query_b: task_b['query'],
-                query_b_y: labels
+                query_b_y: labels,
+                is_training: True
             })
 
             if i_iter % 100 == 0:
@@ -145,7 +148,8 @@ def main(args):
                     query_a: task_a['query'],
                     support_b: task_b['support'],
                     query_b: task_b['query'],
-                    query_b_y: labels
+                    query_b_y: labels,
+                    is_training: False
                 })
                 
                 # evaluation on classification of target task
@@ -156,7 +160,8 @@ def main(args):
                     query_a: test_task['query'],
                     support_b: test_task['support'],
                     query_b: test_task['query'],
-                    query_b_y: labels
+                    query_b_y: labels,
+                    is_training: False
                 })
 
                 # log all variables
