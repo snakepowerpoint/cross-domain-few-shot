@@ -11,7 +11,7 @@ import os
 import argparse
 
 # customerized 
-from src.load_data import Pacs
+from src.load_data import Pacs, Cub
 from src.model import PrototypeNet
 
 # miscellaneous
@@ -19,14 +19,12 @@ import gc
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--log_path', default='logs/test/', type=str)
+parser.add_argument('--log_path', default='baseline', type=str)
 parser.add_argument('--test_name', default='test', type=str)
-
 parser.add_argument('--n_way', default=5, type=int)
 parser.add_argument('--n_shot', default=5, type=int)
 parser.add_argument('--n_query', default=15, type=int)
-
-parser.add_argument('--lr', default=1e-4, type=float)
+parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--n_iter', default=20000, type=int)
 
 
@@ -49,29 +47,22 @@ def main(args):
     
     dataset = Pacs()
 
-    ## establish graph
-    # inputs placeholder (get tasks from domain A and B)
+    ## establish training graph
+    # inputs placeholder (support and query randomly sampled from two domain)
     support_a = tf.placeholder(tf.float32, shape=[n_way, n_shot, None, None, 3])  
-    query_a = tf.placeholder(tf.float32, shape=[n_way, n_query, None, None, 3])  
-    support_b = tf.placeholder(tf.float32, shape=[n_way, n_shot, None, None, 3])
     query_b = tf.placeholder(tf.float32, shape=[n_way, n_query, None, None, 3])
-    
     query_b_y = tf.placeholder(tf.int64, [None, None])  # e.g. [5, 15]
     
     is_training = tf.placeholder(tf.bool)
 
     # reshape
     support_a_reshape = tf.reshape(support_a, [n_way * n_shot, img_h, img_w, 3])
-    query_a_reshape = tf.reshape(query_a, [n_way * n_query, img_h, img_w, 3])
-    support_b_reshape = tf.reshape(support_b, [n_way * n_shot, img_h, img_w, 3])
     query_b_reshape = tf.reshape(query_b, [n_way * n_query, img_h, img_w, 3])
 
     # feature extractor
     protonet = PrototypeNet()
 
     support_a_feature = protonet.feature_extractor(support_a_reshape, is_training)
-    query_a_feature = protonet.feature_extractor(query_a_reshape, is_training, reuse=True)
-    support_b_feature = protonet.feature_extractor(support_b_reshape, is_training, reuse=True)
     query_b_feature = protonet.feature_extractor(query_b_reshape, is_training, reuse=True)
 
     # get prototype
@@ -89,19 +80,39 @@ def main(args):
 
     # optimizer
     global_step = tf.Variable(0, trainable=False, name='global_step')
-    rate = tf.train.inverse_time_decay(args.lr, global_step, decay_steps=2000, decay_rate=5e-1)
+    rate = tf.train.exponential_decay(args.lr, global_step, 2000, 0.5, staircase=True)
     optimizer = tf.train.AdamOptimizer(rate)
     train_op = optimizer.minimize(ce_loss, global_step=global_step)
     
     model_summary()
 
-    ## training
-    init = tf.global_variables_initializer()
+    # saver for saving session
+    saver = tf.train.Saver()
+    log_path = os.path.join('logs', args.log_path,
+                            '_'.join((args.test_name, 'lr'+str(args.lr))))
+    
+    checkpoint_file = log_path + "/checkpoint.ckpt"
+    lastest_checkpoint = tf.train.latest_checkpoint(log_path)
+    init = [
+        tf.global_variables_initializer(),
+        tf.local_variables_initializer()
+    ]
+    def restore_from_checkpoint(sess, saver, checkpoint):
+        if checkpoint:
+            print("Restore session from checkpoint: {}".format(checkpoint))
+            saver.restore(sess, checkpoint)
+            return True
+        else:
+            print("Checkpoint not found: {}".format(checkpoint))
+            return False
 
+    # load CUB data
+    cub = Cub(img_size=227)
+    cub_support, cub_query = cub.get_task()
+
+    ## training
     with tf.Session() as sess:
         # Creates a file writer for the log directory.
-        log_path = os.path.join(args.log_path,
-                                '_'.join((args.test_name, 'lr'+str(args.lr))))
         file_writer_train = tf.summary.FileWriter(os.path.join(log_path, "train"), sess.graph)
         file_writer_test = tf.summary.FileWriter(os.path.join(log_path, "test"), sess.graph)
 
@@ -112,54 +123,57 @@ def main(args):
         tf.summary.scalar("Accuracy", acc)
         merged = tf.summary.merge_all()
 
-        sess.run(init)
-        
-        train_domain_index = [0, 1, 3]
-        test_domain = dataset.domains[2]
-        for i_iter in range(args.n_iter):
-            # get domain A and B
-            random.shuffle(train_domain_index)
-            domain_a = dataset.domains[train_domain_index[0]]
-            domain_b = dataset.domains[train_domain_index[1]]
-            
-            # get categories
-            categories = random.sample(dataset.categories, k=n_way)
+        train_domain = list(dataset.data_dict.keys())[:2]
+        test_domain = list(dataset.data_dict.keys())[2]
 
-            # get task from domain A and B, and the task contains support and query
-            task_a = dataset.get_task(domain_a, categories, n_shot, n_query)
-            task_b = dataset.get_task(domain_b, categories, n_shot, n_query)
+        # get domain A and B
+        domain_a = train_domain[0]
+        domain_b = train_domain[1]
+        categories = list(dataset.data_dict[domain_a].keys())
+
+        sess.run(init)
+        restore_from_checkpoint(sess, saver, lastest_checkpoint)
+        for i_iter in range(args.n_iter):
+            # get categories
+            selected_categories = random.sample(categories, k=n_way)
+
+            # get support and query from domain A and B
+            support, _ = dataset.get_task(domain_a, selected_categories, n_shot, n_query)
+            _, query = dataset.get_task(domain_b, selected_categories, n_shot, n_query)
             
             labels = np.tile(np.arange(n_way)[:, np.newaxis], (1, n_query)).astype(np.uint8)
 
             # training                 
-            _, _ = sess.run([train_op, global_step], feed_dict={
-                support_a: task_a['support'],
-                query_a: task_a['query'],
-                support_b: task_b['support'],
-                query_b: task_b['query'],
+            _, step = sess.run([train_op, global_step], feed_dict={
+                support_a: support,
+                query_b: query,
                 query_b_y: labels,
                 is_training: True
             })
 
+            # evaluation
             if i_iter % 100 == 0:
-                
+                # get training loss and accuracy
                 summary_train, train_loss, train_acc = sess.run([merged, ce_loss, acc], feed_dict={
-                    support_a: task_a['support'],
-                    query_a: task_a['query'],
-                    support_b: task_b['support'],
-                    query_b: task_b['query'],
+                    support_a: support,
+                    query_b: query,
                     query_b_y: labels,
                     is_training: False
                 })
-                
-                # evaluation on classification of target task
-                test_task = dataset.get_task(test_domain, categories, n_shot, n_query)
+
+                # get task from unseen domain 
+                support, query = dataset.get_task(test_domain, selected_categories, n_shot, n_query)
                 
                 summary_test, test_loss, test_acc = sess.run([merged, ce_loss, acc], feed_dict={
-                    support_a: test_task['support'],
-                    query_a: test_task['query'],
-                    support_b: test_task['support'],
-                    query_b: test_task['query'],
+                    support_a: support,
+                    query_b: query,
+                    query_b_y: labels,
+                    is_training: False
+                })
+
+                cub_loss, cub_acc = sess.run([ce_loss, acc], feed_dict={
+                    support_a: cub_support,
+                    query_b: cub_query,
                     query_b_y: labels,
                     is_training: False
                 })
@@ -169,11 +183,16 @@ def main(args):
                 file_writer_test.add_summary(summary_test, global_step=i_iter)
 
                 print('Iteration: %d, train cost: %g, test cost: %g, train acc: %g, test acc: %g' %
-                      (i_iter+1, train_loss, test_loss, train_acc, test_acc))
+                      (step, train_loss, test_loss, train_acc, test_acc))
+                print('cub cost: %g, cub acc: %g' % (cub_loss, cub_acc))
+
+            # save session every 2000 iteration
+            if step % 2000 == 0:    
+                saver.save(sess, checkpoint_file, global_step=step)
+                print('Save session at step %d' % step)
 
         file_writer_train.close()
         file_writer_test.close()
-
 
 
 if __name__ == '__main__':
