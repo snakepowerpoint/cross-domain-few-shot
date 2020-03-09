@@ -26,6 +26,7 @@ parser.add_argument('--n_shot', default=5, type=int)
 parser.add_argument('--n_query', default=15, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--n_iter', default=20000, type=int)
+parser.add_argument('--multi_domain', default=True, type=bool)
 
 
 def compute_acc(prediction, one_hot_labels): 
@@ -123,17 +124,22 @@ def main(args):
         tf.summary.scalar("Accuracy", acc)
         merged = tf.summary.merge_all()
 
-        train_domain = list(dataset.data_dict.keys())[:2]
-        test_domain = list(dataset.data_dict.keys())[2]
+        # get test unseen domains
+        domains = list(dataset.data_dict.keys())
+        test_domain = domains[2]
+        domains.pop(2)
 
-        # get domain A and B
-        domain_a = train_domain[0]
-        domain_b = train_domain[1]
+        domain_a = domains[0]
+        domain_b = domains[1]
         categories = list(dataset.data_dict[domain_a].keys())
 
         sess.run(init)
         restore_from_checkpoint(sess, saver, lastest_checkpoint)
         for i_iter in range(args.n_iter):
+            # get domain A and B
+            if args.multi_domain:
+                domain_a, domain_b = random.sample(domains, k=2)
+
             # get categories
             selected_categories = random.sample(categories, k=n_way)
 
