@@ -3,6 +3,7 @@ import os
 import cv2
 import pickle
 import argparse
+import scipy.misc
 
 # computation
 import numpy as np
@@ -12,13 +13,40 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str)
 
 
+def augmentation(img):
+    img_rot90 = np.rot90(img, k=1)
+    img_rot270 = np.rot90(img, k=3)
+    img_flip_h = horizontal_flip(img)
+    img_flip_v = vertical_flip(img)
+    img_aug = np.stack([img, img_rot90, img_rot270, img_flip_h, img_flip_v])
+    return img_aug
+
+
+def horizontal_flip(img):
+    # image shape: [32, 32, 3]  ***[begin:end:step]
+    img_flip = img[:, ::-1, :]
+    return img_flip
+
+
+def vertical_flip(img):
+    # image shape: [32, 32, 3]
+    img_flip = img[::-1, :, :]
+    return img_flip
+
+
+def resize(img, size):
+    height, width = size
+    img_resized = cv2.resize(img, (width, height))
+    return img_resized
+
+
 class Pacs(object):
     def __init__(self):
         self.domains = ['photo', 'art_painting', 'cartoon', 'sketch']
         self.categories = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person']
         self.data_path = 'pacs'
 
-    def load_data(self):
+    def load_data(self, size=None, is_aug=True, is_normalize=True):
         data_dict = {}        
         for domain in self.domains:
             data_dict[domain] = {}
@@ -28,11 +56,20 @@ class Pacs(object):
                 category_path = os.path.join(domain_path, category)
                 img_files = os.listdir(category_path)
                 for img_file in img_files:
-                    img = cv2.imread(os.path.join(category_path, img_file))
+                    path = os.path.join(category_path, img_file)
+                    img = scipy.misc.imread(path, mode='RGB').astype(np.float)
+                    if size is not None:
+                        img = resize(img, size)
+                    if is_normalize:
+                        img = img / 255.0
+                    if is_aug:
+                        img = augmentation(img)
+                    else:
+                        img = np.expand_dims(img, axis=0)
                     data_dict[domain][category].append(img)
-                data_dict[domain][category] = np.stack(data_dict[domain][category])      
+                data_dict[domain][category] = np.concatenate(data_dict[domain][category])      
         return data_dict
-
+    
 
 class Cub200(object):
     def __init__(self):
@@ -88,7 +125,7 @@ class Cub200(object):
                 bounding_boxes[number_vs_box[0]] = number_vs_box[1:]
         return bounding_boxes
 
-    def load_data(self):
+    def load_data(self, size=None, is_aug=True, is_normalize=True):
         data_dict = {}
         data_dict['train'] = {}
         data_dict['test'] = {}
@@ -106,6 +143,14 @@ class Cub200(object):
             h = int(float(bounding_box[3]))
             
             cropped_img = img[y:y+h, x:x+w]
+            if size is not None:
+                cropped_img = resize(cropped_img, size)
+            if is_normalize:
+                cropped_img = cropped_img / 255.0
+            if is_aug:
+                cropped_img = augmentation(cropped_img)
+            else:
+                cropped_img = np.expand_dims(cropped_img, axis=0)
 
             if self.train_test_split[k] == '1':
                 if class_name in data_dict['train'].keys():
@@ -119,7 +164,10 @@ class Cub200(object):
                 else:
                     data_dict['test'][class_name] = []
                     data_dict['test'][class_name].append(cropped_img)
-
+        
+        for split in list(data_dict.keys()):
+            for category in list(data_dict[split].keys()):
+                data_dict[split][category] = np.concatenate(data_dict[split][category])
         return data_dict
 
         
@@ -127,7 +175,7 @@ class Cub200(object):
 args = parser.parse_args()
 if args.data == 'pacs':
     pacs = Pacs()
-    data = pacs.load_data()
+    data = pacs.load_data(size=(84, 84))
 
     f = open('pacs.pickle', 'wb')
     pickle.dump(data, f)
@@ -135,7 +183,7 @@ if args.data == 'pacs':
 
 if args.data == 'cub':
     cub = Cub200()
-    data = cub.load_data()
+    data = cub.load_data(size=(84, 84))
 
     f = open('cub_crop.pickle', 'wb')
     pickle.dump(data, f)
