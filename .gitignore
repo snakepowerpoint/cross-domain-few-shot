@@ -12,4 +12,8 @@
 
 
 ## data
-/data
+/data/cub200
+/data/pacs
+/data/pacs_pre-read
+/data/*.zip
+/data/*.pickle
