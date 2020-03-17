@@ -5,87 +5,30 @@ from src.model_utils import residual_simple_block, convolution_layer, max_pool, 
 
 
 class PrototypeNet(object):
-    def __init__(self):
-        pass
-        
-    def feature_extractor(self, inputs, is_training, reuse=False):
-        with tf.variable_scope('extractor', reuse=reuse):
-            x = self._convolution_layer(inputs, (3, 3, 64), (1, 1, 1, 1), 'conv_block_1', is_bn=True, is_training=is_training)
-            x = tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
-            
-            x = self._convolution_layer(x, (3, 3, 64), (1, 1, 1, 1), 'conv_block_2', is_bn=True, is_training=is_training)
-            x = tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
-            
-            x = self._convolution_layer(x, (3, 3, 64), (1, 1, 1, 1), 'conv_block_3', is_bn=True, is_training=is_training)
-            x = tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
-            
-            x = self._convolution_layer(x, (3, 3, 64), (1, 1, 1, 1), 'conv_block_4', is_bn=True, is_training=is_training)
-            x = tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='VALID')
-            x = tf.reshape(x, [-1, int(np.prod(x.get_shape()[1:]))], name="flatout")
-        return x
-
-    def _convolution_layer(self, inputs, kernel_shape, stride, name,
-                           flatten=False,
-                           padding='SAME',
-                           initializer=tf.contrib.layers.xavier_initializer(),
-                           activat_fn=tf.nn.relu,
-                           reg=None,
-                           is_bn=False,
-                           is_training=True):
-
-        pre_shape = inputs.get_shape()[-1]
-        rkernel_shape = [kernel_shape[0], kernel_shape[1], pre_shape, kernel_shape[2]]
-
-        with tf.variable_scope(name):
-            weight = tf.get_variable(
-                "weights", rkernel_shape, tf.float32, initializer=initializer, regularizer=reg)
-            bias = tf.get_variable(
-                "bias", kernel_shape[2], tf.float32, initializer=tf.zeros_initializer())
-
-            net = tf.nn.conv2d(inputs, weight, stride, padding=padding)
-            net = tf.add(net, bias)
-
-            if is_bn:
-                net = self._batchnorm_conv(net, is_training=is_training)
-
-            if not activat_fn == None:
-                net = activat_fn(net, name=name+"_out")
-
-            if flatten == True:
-                net = tf.reshape(net, [-1, int(np.prod(net.get_shape()[1:]))], name=name+"_flatout")
+    def __init__(self, n_way, n_shot, n_query, backbone, learning_rate, is_training):
+        self.n_way = n_way
+        self.n_shot = n_shot
+        self.n_query = n_query
+        self.backbone = backbone
+        self.lr = learning_rate
+        self.is_training = is_training
+    
+    def cnn4_encoder(self, inputs, is_training=True, reuse=False):
+        with tf.variable_scope('encoder', reuse=reuse):
+            net = convolution_layer(inputs, [3, 3, 64], [1, 1, 1, 1], is_bn=True,
+                                    activat_fn=tf.nn.relu, name='conv_block1', is_training=is_training)
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_1')
+            net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True,
+                                    activat_fn=tf.nn.relu, name='conv_block2', is_training=is_training)
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_2')
+            net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True,
+                                    activat_fn=tf.nn.relu, name='conv_block3', is_training=is_training)
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_3')
+            net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True,
+                                    activat_fn=tf.nn.relu, name='conv_block4', is_training=is_training)
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_4')
+            net = tf.reshape(net, [-1, int(np.prod(net.get_shape()[1:]))], name="flatout")
         return net
-
-    def _batchnorm_conv(self, input, is_training):
-        with tf.variable_scope("batchnorm"):
-            input = tf.identity(input)
-            channels = input.get_shape()[3]
-
-            beta = tf.get_variable(
-                "beta", [channels], tf.float32, initializer=tf.zeros_initializer())
-            gamma = tf.get_variable(
-                "gamma", [channels], tf.float32, initializer=tf.random_normal_initializer(1.0, 0.02))
-
-            pop_mean = tf.get_variable(
-                "pop_mean", [channels], tf.float32, initializer=tf.zeros_initializer(), trainable=False)
-            pop_variance = tf.get_variable(
-                "pop_variance", [channels], tf.float32, initializer=tf.random_normal_initializer(1.0, 0.02), trainable=False)
-
-            epsilon = 1e-3
-            def batchnorm_train():
-                batch_mean, batch_variance = tf.nn.moments(input, axes=[0, 1, 2], keep_dims=False)
-
-                decay = 0.99
-                train_mean = tf.assign(pop_mean, pop_mean*decay + batch_mean*(1 - decay))
-                train_variance = tf.assign(pop_variance, pop_variance*decay + batch_variance*(1 - decay))
-
-                with tf.control_dependencies([train_mean, train_variance]):
-                    return tf.nn.batch_normalization(input, batch_mean, batch_variance, beta, gamma, epsilon)
-
-            def batchnorm_infer():
-                return tf.nn.batch_normalization(input, pop_mean, pop_variance, beta, gamma, epsilon)
-            
-            batch_normalized_output = tf.cond(is_training, batchnorm_train, batchnorm_infer)
-            return batch_normalized_output
 
     def get_prototype(self, feature, n_shot):
         '''
@@ -115,6 +58,62 @@ class PrototypeNet(object):
         query_feature = tf.tile(tf.expand_dims(query_feature, axis=1), (1, n_way, 1))
         dist = tf.reduce_mean(tf.square(query_feature - prototype), axis=-1)
         return dist
+    
+    def compute_acc(self, prediction, one_hot_labels):
+        labels = tf.argmax(one_hot_labels, axis=1)
+        acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(prediction, axis=-1), labels)))
+        return acc
+    
+    def train(self, support, query):
+        support_a_feature = self.cnn4_encoder(support, is_training=self.is_training)
+        query_b_feature = self.cnn4_encoder(query, is_training=self.is_training, reuse=True)
+
+        # get prototype
+        prototype_a = self.get_prototype(support_a_feature, n_shot=self.n_shot)
+
+        # metric function (few-shot classification)
+        dists = self.compute_distance(prototype_a, query_b_feature)
+        log_p_y = tf.reshape(tf.nn.log_softmax(-dists), [self.n_way, self.n_query, -1])
+
+        # classification loss and accuracy
+        query_b_y = np.repeat(np.arange(self.n_way), repeats=self.n_query).astype(np.uint8) 
+        query_b_y = np.reshape(query_b_y, [self.n_way, self.n_query])  # [5, 15]
+        query_b_y_one_hot = tf.one_hot(query_b_y, depth=self.n_way)
+
+        self.train_loss = -tf.reduce_mean(
+            tf.reshape(tf.reduce_sum(tf.multiply(query_b_y_one_hot, log_p_y), axis=-1), [-1]))
+        self.train_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(log_p_y, axis=-1), query_b_y)))
+
+        # optimizer
+        global_step = tf.Variable(0, trainable=False, name='global_step')
+        rate = tf.train.exponential_decay(self.lr, global_step, 2000, 0.5, staircase=True)
+        optimizer = tf.train.AdamOptimizer(rate)
+        self.train_op = optimizer.minimize(self.train_loss, global_step=global_step)
+
+        return self.train_op, self.train_loss, self.train_acc, global_step
+
+    def test(self, support, query):
+        support_a_feature = self.cnn4_encoder(support, is_training=self.is_training, reuse=True)
+        query_b_feature = self.cnn4_encoder(query, is_training=self.is_training, reuse=True)
+
+        # get prototype
+        prototype_a = self.get_prototype(support_a_feature, n_shot=self.n_shot)
+
+        # metric function (few-shot classification)
+        dists = self.compute_distance(prototype_a, query_b_feature)
+        log_p_y = tf.reshape(tf.nn.log_softmax(-dists), [self.n_way, self.n_query, -1])
+
+        # classification loss and accuracy
+        query_b_y = np.repeat(np.arange(self.n_way), repeats=self.n_query).astype(np.uint8)
+        query_b_y = np.reshape(query_b_y, [self.n_way, self.n_query])  # [5, 15]
+        query_b_y_one_hot = tf.one_hot(query_b_y, depth=self.n_way)
+
+        self.train_loss = -tf.reduce_mean(
+            tf.reshape(tf.reduce_sum(tf.multiply(query_b_y_one_hot, log_p_y), axis=-1), [-1]))
+        self.train_acc = tf.reduce_mean(tf.to_float(
+            tf.equal(tf.argmax(log_p_y, axis=-1), query_b_y)))
+
+        return self.train_loss, self.train_acc
 
 
 class RelationNet(object):
@@ -128,24 +127,24 @@ class RelationNet(object):
 
     def cnn4_encoder(self, inputs, is_training=True, reuse=False):
         with tf.variable_scope('encoder', reuse=reuse):
-            net = convolution_layer(inputs, [3, 3, 64], [1, 1, 1, 1], is_bn=True, padding='VALID',
+            net = convolution_layer(inputs, [3, 3, 64], [1, 1, 1, 1], is_bn=True,
                                     activat_fn=tf.nn.relu, name='conv_block1', is_training=is_training)
-            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1])
-            net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True, padding='VALID',
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_1')
+            net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True,
                                     activat_fn=tf.nn.relu, name='conv_block2', is_training=is_training)
-            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1])
-            net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True, padding='VALID',
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_2')
+            net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True,
                                     activat_fn=tf.nn.relu, name='conv_block3', is_training=is_training)
-            net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True, padding='VALID',
+            net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True,
                                     activat_fn=tf.nn.relu, name='conv_block4', is_training=is_training)
         return net
     
     def resnet10_encoder(self, inputs, is_training=True, reuse=False):
         with tf.variable_scope('encoder', reuse=reuse):
             # conv 1
-            net = convolution_layer(inputs, [7, 7, 64], [1, 2, 2, 1], is_bn=True, padding='VALID',
+            net = convolution_layer(inputs, [7, 7, 64], [1, 2, 2, 1], is_bn=True, padding='SAME',
                                     activat_fn=tf.nn.relu, name='conv_1', is_training=is_training)
-            net = max_pool(net, [1, 3, 3, 1], [1, 2, 2, 1])
+            net = max_pool(net, [1, 3, 3, 1], [1, 2, 2, 1], name='max_1')
             
             # conv 2
             net = residual_simple_block(net, 64, block=1, is_half=False, is_training=is_training)
@@ -161,10 +160,10 @@ class RelationNet(object):
         with tf.variable_scope('relation_mod', reuse=reuse):
             net = convolution_layer(inputs, [3, 3, 64], [1, 1, 1, 1], is_bn=True, activat_fn=tf.nn.relu,
                                     name='conv_block1', is_training=is_training)
-            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1])
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_1')
             net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True, activat_fn=tf.nn.relu,
                                     name='conv_block2', is_training=is_training)
-            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1])
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_2')
             
             net = fc_layer(net, 8, name='fc1', activat_fn=tf.nn.relu)
             net = fc_layer(net, 1, name='fc2', activat_fn=tf.nn.sigmoid)
