@@ -91,13 +91,13 @@ def batchnorm_conv(inputs, is_training):
         return batch_normalized_output
 
 
-def max_pool(inputs, kernel_size, strides, padding='SAME'):
+def max_pool(inputs, kernel_size, strides, padding='SAME', name=None):
     '''
     Args
         kernel_size: e.g. [1, 2, 2, 1]
         strides: e.g. [1, 2, 2, 1]
     '''
-    net = tf.nn.max_pool(inputs, ksize=kernel_size, strides=strides, padding=padding)
+    net = tf.nn.max_pool(inputs, ksize=kernel_size, strides=strides, padding=padding, name=name)
     return net
 
 # need to correct

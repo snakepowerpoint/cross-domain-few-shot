@@ -110,3 +110,38 @@ class Cub(object):
         return support, query
 
 
+class MiniImageNet(object):
+    def __init__(self):
+        self.data_path = 'data/mini-imagenet'
+        self.data_dict = self._load_data()
+
+    def _load_data(self):
+        train_data_path = os.path.join(self.data_path, 'mini-imagenet-cache-train.pkl')
+        test_data_path = os.path.join(self.data_path, 'mini-imagenet-cache-test.pkl')
+        data_dict = {}
+        with open(train_data_path, 'rb') as f:
+            data_dict['train'] = pickle.load(f)
+        with open(test_data_path, 'rb') as f:
+            data_dict['test'] = pickle.load(f)
+        
+        data_dict = self._normalized(data_dict)
+        return data_dict
+    
+    def _normalized(self, data_dict):
+        data_dict['train']['image_data'] = data_dict['train']['image_data'] / 255.0 
+        data_dict['test']['image_data'] = data_dict['test']['image_data'] / 255.0
+        return data_dict
+
+    def get_task(self, n_way=5, n_shot=5, n_query=15, mode='train'):
+        support = []
+        query = []
+        selected_categories = random.sample(list(self.data_dict[mode]['class_dict'].keys()), k=n_way)
+        for category in selected_categories:
+            selected_imgs = random.sample(
+                self.data_dict[mode]['class_dict'][category], k=n_shot+n_query)
+            support.append(self.data_dict[mode]['image_data'][selected_imgs[:n_shot]])
+            query.append(self.data_dict[mode]['image_data'][selected_imgs[n_shot:]])
+
+        support = np.stack(support)
+        query = np.stack(query)
+        return support, query
