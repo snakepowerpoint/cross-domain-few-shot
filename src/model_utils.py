@@ -148,3 +148,31 @@ def fc_layer(inputs,
 #     self.reuse = True
 #     self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name)
 #     return outputs
+
+def convolution_layer_meta(inputs, weight, bias, strides, name, is_bn=False, padding='SAME', activat_fn=tf.nn.relu):
+
+    x = tf.nn.conv2d(inputs, weight, strides, padding, name=name + '_conv2d') + bias
+    
+    if is_bn == True:
+        with tf.variable_scope('conv_meta'):
+            x = tf.layers.batch_normalization(x, training=True, name=name + '_bn', reuse=tf.AUTO_REUSE)
+
+    if activat_fn is not None:
+        x = activat_fn(x, name=name + "_out")
+    
+    return x
+
+def fc_layer_meta(inputs, weight, bias, name, activat_fn=tf.nn.relu):
+
+    shape = inputs.get_shape().as_list()
+    dim = 1
+    for d in shape[1:]:
+        dim *= d
+    x = tf.reshape(inputs, [-1, dim])
+
+    x = tf.nn.bias_add(tf.matmul(x, weight), bias)
+
+    if activat_fn is not None:
+        x = activat_fn(x, name=name + "_out")
+    
+    return x    

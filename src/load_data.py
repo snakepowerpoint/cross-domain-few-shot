@@ -10,7 +10,8 @@ import random
 
 class Pacs(object):
     def __init__(self):
-        self.data_path = 'data/'
+        #self.data_path = 'data/'
+        self.data_path = '/data/rahul/workspace/cross-domain-few-shot/cross-domain-few-shot/data/'
         self.data_dict = self._load_data()
     
     def _load_data(self):
@@ -35,7 +36,8 @@ class Pacs(object):
 
 class Omniglot(object):
     def __init__(self):
-        self.data_path = 'data/'
+        #self.data_path = 'data/'
+        self.data_path = '/data/rahul/workspace/cross-domain-few-shot/cross-domain-few-shot/data/'
         self.data_dict = self._load_data()
 
     def _load_data(self):
@@ -86,7 +88,8 @@ class Omniglot(object):
 
 class Cub(object):
     def __init__(self):
-        self.data_path = 'data/'
+        #self.data_path = 'data/'
+        self.data_path = '/data/rahul/workspace/cross-domain-few-shot/cross-domain-few-shot/data/'
         self.data_dict = self._load_data()
 
     def _load_data(self):
