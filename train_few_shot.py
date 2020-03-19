@@ -127,7 +127,7 @@ def main(args):
                 })
 
                 # get task from validation
-                support, query = dataset.get_task(n_way, n_shot, n_query, mode='test')
+                support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='test')
                 summary_val, val_loss, val_acc = sess.run([merged, test_loss, test_acc], feed_dict={
                     support_a: support,
                     query_b: query,
