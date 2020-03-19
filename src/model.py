@@ -142,9 +142,10 @@ class RelationNet(object):
     def resnet10_encoder(self, inputs, is_training=True, reuse=False):
         with tf.variable_scope('encoder', reuse=reuse):
             # conv 1
-            net = convolution_layer(inputs, [7, 7, 64], [1, 2, 2, 1], is_bn=True, padding='SAME',
+            net = convolution_layer(inputs, [7, 7, 64], [1, 2, 2, 1], bias=False, is_bn=True,
                                     activat_fn=tf.nn.relu, name='conv_1', is_training=is_training)
-            net = max_pool(net, [1, 3, 3, 1], [1, 2, 2, 1], name='max_1')
+            # net = tf.pad(net, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]])
+            net = max_pool(net, [1, 3, 3, 1], [1, 2, 2, 1], name='max_1', padding='SAME')
             
             # conv 2
             net = residual_simple_block(net, 64, block=1, is_half=False, is_training=is_training)
@@ -160,10 +161,10 @@ class RelationNet(object):
         with tf.variable_scope('relation_mod', reuse=reuse):
             net = convolution_layer(inputs, [3, 3, 64], [1, 1, 1, 1], is_bn=True, activat_fn=tf.nn.relu,
                                     name='conv_block1', is_training=is_training)
-            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_1')
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_1', padding='VALID')
             net = convolution_layer(net, [3, 3, 64], [1, 1, 1, 1], is_bn=True, activat_fn=tf.nn.relu,
                                     name='conv_block2', is_training=is_training)
-            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_2')
+            net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_2', padding='VALID')
             
             net = fc_layer(net, 8, name='fc1', activat_fn=tf.nn.relu)
             net = fc_layer(net, 1, name='fc2', activat_fn=tf.nn.sigmoid)
@@ -172,7 +173,11 @@ class RelationNet(object):
     def mse(self, y_pred, y_true):
         return tf.reduce_mean(tf.square(y_true - y_pred))
 
-    def train(self, support, query):
+    def ce_loss(self, y_pred, y_true):
+        ce_loss = tf.nn.softmax_cross_entropy_with_logits(logits=y_pred, labels=y_true)
+        return tf.reduce_mean(ce_loss)
+
+    def train(self, support, query, reguarlized=True):
         '''
         Args
             support: input placeholder with shape [n_way * n_shot, None, None, 3]
@@ -208,19 +213,25 @@ class RelationNet(object):
         one_hot_labels = tf.one_hot(labels, depth=self.n_way)  # [75, 5]
         
         # loss and accuracy
-        self.train_loss = self.mse(y_pred=relations, y_true=one_hot_labels)
+        self.train_loss = self.ce_loss(y_pred=relations, y_true=one_hot_labels)
         self.train_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations, axis=-1), labels)))
+
+        if reguarlized:
+            train_vars = tf.trainable_variables()
+            l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'weight' in v.name]) * 1e-8
+            self.train_loss = tf.add(self.train_loss, l2_loss)
 
         # optimize
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        rate = tf.train.exponential_decay(self.lr, global_step, 2000, 0.5, staircase=True)
+        rate = self.lr
+        # rate = tf.train.exponential_decay(self.lr, global_step, 5000, 0.5, staircase=True)
         optimizer = tf.train.AdamOptimizer(rate)
         self.train_op = optimizer.minimize(self.train_loss, global_step=global_step)
         
         return self.train_op, self.train_loss, self.train_acc, global_step
     
     # need to correct
-    def test(self, support, query):
+    def test(self, support, query, reguarlized=True):
         # support
         if self.backbone == 'conv4':
             support_encode = self.cnn4_encoder(support, is_training=self.is_training, reuse=True)
@@ -250,4 +261,9 @@ class RelationNet(object):
         self.test_loss = self.mse(y_pred=relations, y_true=one_hot_labels)
         self.test_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations, axis=-1), labels)))
 
+        if reguarlized:
+            train_vars = tf.trainable_variables()
+            l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'weight' in v.name]) * 1e-8
+            self.test_loss = tf.add(self.test_loss, l2_loss)
+        
         return self.test_loss, self.test_acc

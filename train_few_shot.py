@@ -27,7 +27,7 @@ parser.add_argument('--n_way', default=5, type=int)
 parser.add_argument('--n_shot', default=5, type=int)
 parser.add_argument('--n_query', default=15, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
-parser.add_argument('--n_iter', default=500000, type=int)
+parser.add_argument('--n_iter', default=40000, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
 
 
@@ -36,8 +36,8 @@ def model_summary():
     slim.model_analyzer.analyze_vars(model_vars, print_info=True)
 
 def main(args):
-    img_w = 84
-    img_h = 84
+    img_w = 224  # 84 or 224
+    img_h = 224
     
     n_way = args.n_way
     n_shot = args.n_shot
@@ -89,7 +89,7 @@ def main(args):
             return False
 
     # load CUB data
-    cub = Cub()
+    cub = Cub(size=(224, 224), mode='test')
     
     ## training
     with tf.Session() as sess:
