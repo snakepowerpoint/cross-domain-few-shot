@@ -9,11 +9,15 @@ import numpy as np
 import random
 import scipy.misc
 from .color_jitter import ColorJitter, RandomResizedCrop
+import timeit
 
+# for mini-imagenet
+mean = [0.485, 0.456, 0.406]
+std = [0.229, 0.224, 0.225]
 
 class Pacs(object):
     def __init__(self):
-        self.data_path = 'data/'
+        self.data_path = '/data/common/cross-domain-few-shot/'
         self.data_dict = self._load_data()
     
     def _load_data(self):
@@ -38,7 +42,7 @@ class Pacs(object):
 
 class Omniglot(object):
     def __init__(self):
-        self.data_path = 'data/'
+        self.data_path = '/data/common/cross-domain-few-shot/'
         self.data_dict = self._load_data()
 
     def _load_data(self):
@@ -89,7 +93,7 @@ class Omniglot(object):
 
 class Cub(object):
     def __init__(self, size, mode='test'):
-        self.data_path = 'data/'
+        self.data_path = '/data/common/cross-domain-few-shot/'
         self.mode = mode
         self.data_dict = self._load_data(size=size)
         
@@ -135,7 +139,7 @@ class Cub(object):
 
 class MiniImageNet(object):
     def __init__(self, resize=False):
-        self.data_path = 'data/mini-imagenet'
+        self.data_path = '/data/common/cross-domain-few-shot/mini-imagenet'
         self.resize = resize
         self.data_dict = self._load_data()
         
@@ -171,31 +175,33 @@ class MiniImageNet(object):
         return data_dict
     
     def get_task(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=True, mode='train'):
-        support = []
-        query = []
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
         selected_categories = random.sample(list(self.data_dict[mode]['class_dict'].keys()), k=n_way)
-        for category in selected_categories:
+        for i, category in enumerate(selected_categories):
             selected_imgs = random.sample(
                 self.data_dict[mode]['class_dict'][category], k=n_shot+n_query)
             
             s_imgs = self.data_dict[mode]['image_data'][selected_imgs[:n_shot]]
             q_imgs = self.data_dict[mode]['image_data'][selected_imgs[n_shot:]]
-            support.append(self.resize_batch_img(s_imgs, size=size, aug=aug))
-            query.append(self.resize_batch_img(q_imgs, size=size, aug=aug))
 
-        support = np.stack(support)
-        query = np.stack(query)
+            support[i] = self.resize_batch_img(s_imgs, size=size, aug=aug)
+            query[i] = self.resize_batch_img(q_imgs, size=size, aug=aug)
+
         return support, query
     
-    def resize_batch_img(self, imgs, size, aug):
-        resized_img = []
-        for i_img in imgs:
-            img = cv2.resize(i_img, size)
+    def resize_batch_img(self, imgs, size, aug):       
+        resized_img = np.empty((imgs.shape[0], size[0], size[1], 3))
+        for i, i_img in enumerate(imgs):
+            
             if aug:
-                resized_img.append(augmentation(img, size=size))
+                i_img = augmentation(i_img, size=84)
             else:
-                resized_img.append(img / 255.0)
-        return np.stack(resized_img)
+                i_img = ((i_img / 255.0) - mean) / std
+
+            resized_img[i] = cv2.resize(i_img, size)
+
+        return resized_img
 
 
 def augmentation(img, size):
@@ -215,8 +221,6 @@ def augmentation(img, size):
             return img
 
     def normalize(img):
-        mean = [0.485, 0.456, 0.406]
-        std = [0.229, 0.224, 0.225]
         return ((img / 255.0) - mean) / std
     
     img = Image.fromarray(img)
