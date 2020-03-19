@@ -5,6 +5,8 @@ import tensorflow.contrib.slim as slim
 # computation
 import numpy as np
 import random
+from scipy.stats import sem, t
+from scipy import mean
 
 # io
 import os
@@ -25,7 +27,7 @@ parser.add_argument('--n_way', default=5, type=int)
 parser.add_argument('--n_shot', default=5, type=int)
 parser.add_argument('--n_query', default=15, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
-parser.add_argument('--n_iter', default=100000, type=int)
+parser.add_argument('--n_iter', default=40000, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
 
 
@@ -55,13 +57,13 @@ def main(args):
 
     # feature extractor
     init_lr = args.lr
-    model = RelationNet(n_way, n_shot, n_query, backbone='resnet', learning_rate=init_lr, is_training=is_training)
+    model = RelationNet(n_way, n_shot, n_query, backbone='conv4', learning_rate=init_lr, is_training=is_training)
     train_op, train_loss, train_acc, global_step = model.train(support=support_a_reshape, query=query_b_reshape)
     
     model_summary()
 
     ## establish test graph
-    model_test = RelationNet(n_way, n_shot, n_query, backbone='resnet', learning_rate=init_lr, is_training=is_training)
+    model_test = RelationNet(n_way, n_shot, n_query, backbone='conv4', learning_rate=init_lr, is_training=is_training)
     test_loss, test_acc = model_test.test(support=support_a_reshape, query=query_b_reshape)
 
     # saver for saving session
@@ -91,6 +93,7 @@ def main(args):
     with tf.Session() as sess:
         # Creates a file writer for the log directory.
         file_writer_train = tf.summary.FileWriter(os.path.join(log_path, "train"), sess.graph)
+        file_writer_val = tf.summary.FileWriter(os.path.join(log_path, "val"), sess.graph)
         file_writer_test = tf.summary.FileWriter(os.path.join(log_path, "test"), sess.graph)
 
         # store variables
@@ -102,8 +105,8 @@ def main(args):
 
         # get test unseen domains
         domains = list(dataset.data_dict.keys())
-        # test_domain = domains[2]
-        # domains.pop(2)
+        test_domain = 'sketch'
+        domains.remove(test_domain)  # drop test domain data
 
         domain_a = domains[0]
         domain_b = domains[1]
@@ -130,9 +133,17 @@ def main(args):
                 is_training: True
             })
 
+            # evaluation
             if i_iter % 50 == 0:
-                # evaluation
-                summary_train, loss, acc = sess.run([merged, train_loss, train_acc], feed_dict={
+                summary_train, loss, acc = sess.run([merged, test_loss, test_acc], feed_dict={
+                    support_a: support,
+                    query_b: query,
+                    is_training: False
+                })
+
+                # get task from unseen domain in PACS
+                support, query = dataset.get_task(test_domain, selected_categories, n_shot, n_query)
+                summary_val, val_loss, val_acc = sess.run([merged, test_loss, test_acc], feed_dict={
                     support_a: support,
                     query_b: query,
                     is_training: False
@@ -147,10 +158,13 @@ def main(args):
                 })
 
                 # log all variables
-                file_writer_train.add_summary(summary_train, global_step=i_iter)
-                file_writer_test.add_summary(summary_test, global_step=i_iter)
+                file_writer_train.add_summary(summary_train, global_step=step)
+                file_writer_val.add_summary(summary_val, global_step=step)
+                file_writer_test.add_summary(summary_test, global_step=step)
 
                 print('Iteration: %d, train cost: %g, train acc: %g' % (step, loss, acc))
+                print('eval %s cost: %g, eval %s acc: %g' %
+                      (test_domain, val_loss, test_domain, val_acc))
                 print('cub cost: %g, cub acc: %g' % (cub_loss, cub_acc))
 
             # save session every 2000 iteration
@@ -158,7 +172,25 @@ def main(args):
                 saver.save(sess, checkpoint_file, global_step=step)
                 print('Save session at step %d' % step)
 
+        # compute accuracy on 600 randomly generated task from CUB
+        acc = []
+        for _ in range(600):
+            cub_support, cub_query = cub.get_task(n_way, n_shot, n_query)
+            cub_acc = sess.run([test_acc], feed_dict={
+                support_a: cub_support,
+                query_b: cub_query,
+                is_training: False
+            })
+            acc.append(cub_acc)
+        acc = np.array(acc)
+        
+        confidence = 0.95
+        std_err = sem(acc)
+        h = std_err * t.ppf((1 + confidence) / 2, 600 - 1)
+        print('Overall acc: {}+-{}%'.format(mean(acc), h))
+
         file_writer_train.close()
+        file_writer_val.close()
         file_writer_test.close()
 
 
