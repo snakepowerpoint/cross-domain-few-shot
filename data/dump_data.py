@@ -11,6 +11,7 @@ import numpy as np
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str)
+parser.add_argument('--size', type=int)
 
 
 def augmentation(img):
@@ -175,17 +176,17 @@ class Cub200(object):
 args = parser.parse_args()
 if args.data == 'pacs':
     pacs = Pacs()
-    data = pacs.load_data(size=(84, 84))
+    data = pacs.load_data(size=(args.size, args.size))
 
-    f = open('pacs.pickle', 'wb')
+    f = open('pacs.pickle{}'.format(args.size), 'wb')
     pickle.dump(data, f)
     f.close()
 
 if args.data == 'cub':
     cub = Cub200()
-    data = cub.load_data(size=(84, 84))
+    data = cub.load_data(size=(args.size, args.size))
 
-    f = open('cub_crop.pickle', 'wb')
+    f = open('cub_crop{}.pickle'.format(args.size), 'wb')
     pickle.dump(data, f)
     f.close()
 
