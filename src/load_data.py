@@ -207,10 +207,12 @@ def augmentation(img, size):
         img = np.array(img)
         return img
 
-    def horizontal_flip(img):
+    def random_horizontal_flip(img):
         # image shape: [h, w, 3]  ***[begin:end:step]
-        img_flip = img[:, ::-1, :]
-        return img_flip
+        if bool(random.getrandbits(1)):
+            return img[:, ::-1, :]
+        else:
+            return img
 
     def normalize(img):
         mean = [0.485, 0.456, 0.406]
@@ -221,6 +223,6 @@ def augmentation(img, size):
     _random_resized_crop = RandomResizedCrop(size=size)
     img = _random_resized_crop(img)
     img = jitter(img)
-    img = horizontal_flip(img)
+    img = random_horizontal_flip(img)
     img = normalize(img)
     return img
