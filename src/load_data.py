@@ -89,7 +89,7 @@ class Omniglot(object):
 
 class Cub(object):
     def __init__(self, size, mode='test'):
-        self.data_path = 'data/'
+        self.data_path = '/data/common/cross-domain-few-shot/'
         self.mode = mode
         self.data_dict = self._load_data(size=size)
         
@@ -135,7 +135,7 @@ class Cub(object):
 
 class MiniImageNet(object):
     def __init__(self, resize=False):
-        self.data_path = 'data/mini-imagenet'
+        self.data_path = '/data/common/cross-domain-few-shot/mini-imagenet'
         self.resize = resize
         self.data_dict = self._load_data()
         
@@ -170,7 +170,7 @@ class MiniImageNet(object):
             data_dict[dataset]['image_data'] = np.stack(image_data)
         return data_dict
     
-    def get_task(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=True, mode='train'):
+    def get_task(self, n_way=5, n_shot=5, n_query=15, size=(224, 224), aug=True, mode='train'):
         support = []
         query = []
         selected_categories = random.sample(list(self.data_dict[mode]['class_dict'].keys()), k=n_way)
@@ -195,6 +195,7 @@ class MiniImageNet(object):
                 resized_img.append(augmentation(img, size=size))
             else:
                 resized_img.append(img / 255.0)
+            
         return np.stack(resized_img)
 
 
@@ -215,13 +216,14 @@ def augmentation(img, size):
             return img
 
     def normalize(img):
-        mean = [0.485, 0.456, 0.406]
-        std = [0.229, 0.224, 0.225]
+        mean = [0.485, 0.456, 0.406]  # [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]  # [0.229, 0.224, 0.225]
         return ((img / 255.0) - mean) / std
     
     img = Image.fromarray(img)
     _random_resized_crop = RandomResizedCrop(size=size)
     img = _random_resized_crop(img)
+    print(np.min(img))
     img = jitter(img)
     img = random_horizontal_flip(img)
     img = normalize(img)
