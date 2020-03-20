@@ -7,6 +7,7 @@ import numpy as np
 import random
 from scipy.stats import sem, t
 from scipy import mean
+import timeit
 
 # io
 import os
@@ -107,16 +108,27 @@ def main(args):
         
         sess.run(init)
         restore_from_checkpoint(sess, saver, lastest_checkpoint)
+        preprocess_time = 0
+        train_time = 0
         for i_iter in range(args.n_iter):
+
+            start = timeit.default_timer()
             # get support and query
             support, query = dataset.get_task(n_way, n_shot, n_query, mode='train')
+            stop = timeit.default_timer()
             
+            preprocess_time += (stop - start) 
+
+            start = timeit.default_timer()
             # training                 
             _, step = sess.run([train_op, global_step], feed_dict={
                 support_a: support,
                 query_b: query,
                 is_training: True
             })
+            stop = timeit.default_timer()
+
+            train_time += (stop - start) 
             
             # evaluation
             if i_iter % 50 == 0:
@@ -150,6 +162,8 @@ def main(args):
                 print('Iteration: %d, train cost: %g, train acc: %g' % (step, loss, acc))
                 print('eval cost: %g, eval acc: %g' % (val_loss, val_acc))
                 print('CUB cost: %g, CUB acc: %g' % (cub_loss, cub_acc))
+                print("==> Preporcess time: ", preprocess_time/(i_iter+1))
+                print("==> Train time: ", train_time/(i_iter+1))
 
             # save session every 2000 iteration
             if step % 2000 == 0:    
