@@ -177,7 +177,7 @@ class RelationNet(object):
         ce_loss = tf.nn.softmax_cross_entropy_with_logits(logits=y_pred, labels=y_true)
         return tf.reduce_mean(ce_loss)
 
-    def train(self, support, query, reguarlized=True):
+    def train(self, support, query, regularized=True):
         '''
         Args
             support: input placeholder with shape [n_way * n_shot, None, None, 3]
@@ -216,7 +216,7 @@ class RelationNet(object):
         self.train_loss = self.ce_loss(y_pred=relations, y_true=one_hot_labels)
         self.train_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations, axis=-1), labels)))
 
-        if reguarlized:
+        if regularized:
             train_vars = tf.trainable_variables()
             l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'weight' in v.name]) * 1e-8
             self.train_loss = tf.add(self.train_loss, l2_loss)
@@ -231,7 +231,7 @@ class RelationNet(object):
         return self.train_op, self.train_loss, self.train_acc, global_step
     
     # need to correct
-    def test(self, support, query, reguarlized=True):
+    def test(self, support, query, regularized=True):
         # support
         if self.backbone == 'conv4':
             support_encode = self.cnn4_encoder(support, is_training=self.is_training, reuse=True)
@@ -261,7 +261,7 @@ class RelationNet(object):
         self.test_loss = self.mse(y_pred=relations, y_true=one_hot_labels)
         self.test_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations, axis=-1), labels)))
 
-        if reguarlized:
+        if regularized:
             train_vars = tf.trainable_variables()
             l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'weight' in v.name]) * 1e-8
             self.test_loss = tf.add(self.test_loss, l2_loss)
