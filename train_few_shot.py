@@ -60,14 +60,15 @@ def main(args):
     model = RelationNet(n_way, n_shot, n_query, backbone='resnet',
                         learning_rate=init_lr, is_training=is_training)
     train_op, train_loss, train_acc, global_step = model.train(
-        support=support_a_reshape, query=query_b_reshape)
+        support=support_a_reshape, query=query_b_reshape, regularized=True)
     
     model_summary()
 
     ## establish test graph
     model_test = RelationNet(n_way, n_shot, n_query, backbone='resnet',
                              learning_rate=init_lr, is_training=is_training)
-    test_loss, test_acc = model_test.test(support=support_a_reshape, query=query_b_reshape)
+    test_loss, test_acc = model_test.test(
+        support=support_a_reshape, query=query_b_reshape, regularized=True)
 
     # saver for saving session
     saver = tf.train.Saver()
@@ -90,7 +91,7 @@ def main(args):
             return False
 
     # load CUB data
-    cub = Cub(size=(224, 224), mode='test')
+    cub = Cub(mode='test')
     
     ## training
     with tf.Session() as sess:
@@ -139,7 +140,7 @@ def main(args):
                 })
 
                 # get task from validation
-                support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='test')
+                support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='val')
                 summary_val, val_loss, val_acc = sess.run([merged, test_loss, test_acc], feed_dict={
                     support_a: support,
                     query_b: query,
@@ -147,7 +148,7 @@ def main(args):
                 })
 
                 # get task from unseen domain (CUB)
-                cub_support, cub_query = cub.get_task(n_way, n_shot, n_query)
+                cub_support, cub_query = cub.get_task(n_way, n_shot, n_query, aug=False)
                 summary_test, cub_loss, cub_acc = sess.run([merged, test_loss, test_acc], feed_dict={
                     support_a: cub_support,
                     query_b: cub_query,
