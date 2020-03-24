@@ -11,9 +11,11 @@ import scipy.misc
 from .color_jitter import ColorJitter, RandomResizedCrop
 import timeit
 
+
 # for mini-imagenet
 mean = [0.485, 0.456, 0.406]
 std = [0.229, 0.224, 0.225]
+
 
 class Pacs(object):
     def __init__(self):
@@ -26,17 +28,19 @@ class Pacs(object):
             data_dict = pickle.load(f)
         return data_dict
 
-    def get_task(self, domain, categories, n_shot=5, n_query=15):
-        support = []
-        query = []
-        for category in categories:
+    def get_task(self, domain, categories, n_shot=5, n_query=15, size=(224, 224), aug=True):
+        n_way = len(categories)
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
+        for i, category in enumerate(categories):
             num_img = len(self.data_dict[domain][category])
             selected_imgs = random.sample(range(num_img), k=n_shot+n_query)
-            support.append(self.data_dict[domain][category][selected_imgs[:n_shot]])
-            query.append(self.data_dict[domain][category][selected_imgs[n_shot:]])
+            
+            s_imgs = self.data_dict[domain][category][selected_imgs[:n_shot]]
+            q_imgs = self.data_dict[domain][category][selected_imgs[n_shot:]]
 
-        support = np.stack(support)
-        query = np.stack(query)  
+            support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
+            query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
         return support, query
 
 
@@ -92,48 +96,40 @@ class Omniglot(object):
 
 
 class Cub(object):
-    def __init__(self, size, mode='test'):
+    def __init__(self, mode='test'):
         self.data_path = '/data/common/cross-domain-few-shot/'
         self.mode = mode
-        self.data_dict = self._load_data(size=size)
+        self.data_dict = self._load_data()
         
-    def _load_data(self, size):
-        data_path = os.path.join(self.data_path, 'cub_crop.pickle')
+    def _load_data(self):
+        data_path = os.path.join(self.data_path, 'cub.pickle')
         with open(data_path, 'rb') as f:
             data_dict = pickle.load(f)
         
         if self.mode == 'train':
             data_dict.pop('test', None)
         else:
+            data_dict.pop('val', None)
             data_dict.pop('train', None)
         
-        data_dict = self._resize(data_dict, size=size)
         return data_dict
 
-    def _resize(self, data_dict, size):
-        h, w = size
-        for dataset, class_dict in data_dict.items():
-            for class_name, image_list in class_dict.items():
-                data_dict[dataset][class_name] = []
-                for image in image_list:
-                    resized_img = cv2.resize(image, (h, w))
-                    data_dict[dataset][class_name].append(resized_img)
-                data_dict[dataset][class_name] = np.stack(data_dict[dataset][class_name])
-        return data_dict
-
-    def get_task(self, n_way=5, n_shot=5, n_query=15):
+    def get_task(self, n_way=5, n_shot=5, n_query=15, size=(224, 224), aug=False):
         mode = self.mode
-        support = []
-        query = []
         selected_categories = random.sample(list(self.data_dict[mode].keys()), k=n_way)
-        for category in selected_categories:
-            num_img = self.data_dict[mode][category].shape[0]
-            selected_imgs = random.sample(range(num_img), k=n_shot+n_query)
-            support.append(self.data_dict[mode][category][selected_imgs[:n_shot]])
-            query.append(self.data_dict[mode][category][selected_imgs[n_shot:]])
 
-        support = np.stack(support)
-        query = np.stack(query)
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
+        for i, category in enumerate(selected_categories):
+            num_img = len(self.data_dict[mode][category])
+            selected_imgs = random.sample(range(num_img), k=n_shot+n_query)
+            
+            s_imgs = self.data_dict[mode][category][selected_imgs[:n_shot]]
+            q_imgs = self.data_dict[mode][category][selected_imgs[n_shot:]]
+
+            support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
+            query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
+
         return support, query
 
 
@@ -146,12 +142,15 @@ class MiniImageNet(object):
     def _load_data(self):
         train_data_path = os.path.join(self.data_path, 'mini-imagenet-cache-train.pkl')
         test_data_path = os.path.join(self.data_path, 'mini-imagenet-cache-test.pkl')
+        val_data_path = os.path.join(self.data_path, 'mini-imagenet-cache-val.pkl')
         data_dict = {}
         with open(train_data_path, 'rb') as f:
             data_dict['train'] = pickle.load(f)
         with open(test_data_path, 'rb') as f:
             data_dict['test'] = pickle.load(f)
-        
+        with open(val_data_path, 'rb') as f:
+            data_dict['val'] = pickle.load(f)
+
         if self.resize:
             data_dict = self._resize(data_dict)
             data_dict = self._normalized(data_dict)
@@ -159,6 +158,7 @@ class MiniImageNet(object):
     
     def _normalized(self, data_dict):
         data_dict['train']['image_data'] = data_dict['train']['image_data'] / 255.0 
+        data_dict['val']['image_data'] = data_dict['val']['image_data'] / 255.0
         data_dict['test']['image_data'] = data_dict['test']['image_data'] / 255.0
         return data_dict
     
@@ -185,23 +185,25 @@ class MiniImageNet(object):
             s_imgs = self.data_dict[mode]['image_data'][selected_imgs[:n_shot]]
             q_imgs = self.data_dict[mode]['image_data'][selected_imgs[n_shot:]]
 
-            support[i] = self.resize_batch_img(s_imgs, size=size, aug=aug)
-            query[i] = self.resize_batch_img(q_imgs, size=size, aug=aug)
+            support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
+            query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
 
         return support, query
     
-    def resize_batch_img(self, imgs, size, aug):       
-        resized_img = np.empty((imgs.shape[0], size[0], size[1], 3))
-        for i, i_img in enumerate(imgs):
-            
-            if aug:
-                i_img = augmentation(i_img, size=84)
-            else:
-                i_img = ((i_img / 255.0) - mean) / std
 
+def resize_batch_img(imgs, size, aug):       
+    resized_img = np.empty((imgs.shape[0], size[0], size[1], 3))
+    for i, i_img in enumerate(imgs):
+        
+        if aug:
+            i_img = augmentation(i_img, size=84)
             resized_img[i] = cv2.resize(i_img, size)
-
-        return resized_img
+        else:
+            i_img = center_crop(i_img, size=size)
+            i_img = ((i_img / 255.0) - mean) / std
+            resized_img[i] = i_img
+        
+    return resized_img
 
 
 def augmentation(img, size):
@@ -230,3 +232,21 @@ def augmentation(img, size):
     img = random_horizontal_flip(img)
     img = normalize(img)
     return img
+
+
+def center_crop(img, size):
+    height, width = size
+    new_height, new_width = tuple(int(i*1.15) for i in size)
+    
+    img = Image.fromarray(img)
+    img = img.resize((new_width, new_height))
+    
+    left = (new_width - width)/2
+    top = (new_height - height)/2
+    right = (new_width + width)/2
+    bottom = (new_height + height)/2
+
+    # Crop the center of the image
+    img = img.crop((left, top, right, bottom))
+    img = img.resize((width, height))
+    return np.array(img)
