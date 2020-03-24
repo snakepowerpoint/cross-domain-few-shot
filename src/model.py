@@ -157,7 +157,7 @@ class RelationNet(object):
             net = residual_simple_block(net, 512, block=4, is_half=True, is_training=is_training)
         return net
     
-    def relation_module(self, inputs, is_training=True, reuse=False):
+    def relation_module(self, inputs, loss_type='softmax', is_training=True, reuse=False):
         with tf.variable_scope('relation_mod', reuse=reuse):
             net = convolution_layer(inputs, [3, 3, 64], [1, 1, 1, 1], is_bn=True, activat_fn=tf.nn.relu,
                                     name='conv_block1', is_training=is_training)
@@ -167,7 +167,10 @@ class RelationNet(object):
             net = max_pool(net, [1, 2, 2, 1], [1, 2, 2, 1], name='max_2', padding='VALID')
             
             net = fc_layer(net, 8, name='fc1', activat_fn=tf.nn.relu)
-            net = fc_layer(net, 1, name='fc2', activat_fn=tf.nn.sigmoid)
+            if loss_type == 'mse':
+                net = fc_layer(net, 1, name='fc2', activat_fn=tf.nn.sigmoid)
+            elif loss_type == 'softmax':
+                net = fc_layer(net, 1, name='fc2', activat_fn=None)
         return net
 
     def mse(self, y_pred, y_true):
