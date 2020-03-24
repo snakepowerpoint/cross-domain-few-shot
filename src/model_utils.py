@@ -60,8 +60,8 @@ def convolution_layer(inputs,
             net = tf.reshape(net, [-1, int(np.prod(net.get_shape()[1:]))], name=name+"_flatout")
     return net
 
-def batchnorm_conv(inputs, is_training):
-    with tf.variable_scope("batchnorm"):
+def batchnorm_conv(inputs, name=[], is_training=tf.cast(True, tf.bool)):
+    with tf.variable_scope(name+"_bn", reuse=tf.AUTO_REUSE):
         inputs = tf.identity(inputs)
         channels = inputs.get_shape()[3]
 
@@ -150,3 +150,30 @@ def fc_layer(inputs,
 #     self.reuse = True
 #     self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name)
 #     return outputs
+
+def convolution_layer_meta(inputs, weight, bias, strides, name, is_training=True, is_bn=False, padding='SAME', activat_fn=tf.nn.relu):
+
+    x = tf.nn.conv2d(inputs, weight, strides, padding, name=name + '_conv2d') + bias
+    
+    #if is_bn == True:
+    #    x = batchnorm_conv(x, name=name, is_training=is_training)
+
+    if activat_fn is not None:
+        x = activat_fn(x, name=name + "_out")
+    
+    return x
+
+def fc_layer_meta(inputs, weight, bias, name, activat_fn=tf.nn.relu):
+
+    shape = inputs.get_shape().as_list()
+    dim = 1
+    for d in shape[1:]:
+        dim *= d
+    x = tf.reshape(inputs, [-1, dim])
+
+    x = tf.nn.bias_add(tf.matmul(x, weight), bias)
+
+    if activat_fn is not None:
+        x = activat_fn(x, name=name + "_out")
+    
+    return x    
