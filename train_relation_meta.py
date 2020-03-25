@@ -22,13 +22,13 @@ import gc
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--log_path', default='baseline', type=str)
-parser.add_argument('--test_name', default='test', type=str)
+parser.add_argument('--log_path', default='baseline_meta', type=str)
+parser.add_argument('--test_name', default='test_meta', type=str)
 parser.add_argument('--n_way', default=5, type=int)
 parser.add_argument('--n_shot', default=5, type=int)
 parser.add_argument('--n_query', default=16, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
-parser.add_argument('--n_iter', default=100000, type=int)
+parser.add_argument('--n_iter', default=400000, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
 
 
@@ -70,6 +70,8 @@ def main(args):
     query_b_reshape = tf.reshape(query_b, [n_way * n_query, img_h, img_w, 3])
 
     # Meta-RelationNet
+    print("=== Build model...")
+    print("learning rate: ", args.lr)
     init_lr = args.lr
     model = RelationNet(n_way, n_shot, n_query, backbone='resnet', learning_rate=init_lr, is_training=is_training)
     model.train_meta(   support_x=support_x_reshape, query_x=query_x_reshape, 
@@ -98,6 +100,8 @@ def main(args):
             print("Checkpoint not found: {}".format(checkpoint))
             return False
 
+
+    print("=== Load data...")
     # load mini-imagenet
     mini = MiniImageNet()
 
@@ -105,7 +109,7 @@ def main(args):
     pacs = Pacs()
 
     # load CUB data
-    cub = Cub()
+    cub = Cub(size=(224, 224), mode='test')
     
     ## training
     with tf.Session() as sess:
@@ -135,7 +139,8 @@ def main(args):
         domain_a = domains[0]
         domain_b = domains[1]
         categories = list(pacs.data_dict[domain_a].keys())
-
+        
+        print("=== Start training...")
         sess.run(init)
         restore_from_checkpoint(sess, saver, lastest_checkpoint)
         for i_iter in range(args.n_iter):
@@ -156,11 +161,11 @@ def main(args):
             _, curr_query_b = pacs.get_task(domain_b, selected_categories, n_shot, n_query)
             
             # training                 
-            _, step = sess.run([model.meta_op], feed_dict={
+            sess.run([model.meta_op], feed_dict={
                 support_x: curr_support_x,
                 query_x: curr_query_x,
-                support_a: curr_support_a,
-                query_b: curr_query_b,                
+                support_a: curr_support_x,
+                query_b: curr_query_x,                
                 is_training: True
             })
 
@@ -171,8 +176,8 @@ def main(args):
                         feed_dict={
                             support_x: curr_support_x,
                             query_x: curr_query_x,
-                            support_a: curr_support_a,
-                            query_b: curr_query_b,                
+                            support_a: curr_support_x,
+                            query_b: curr_query_x,                
                             is_training: False
                         })
 
@@ -192,13 +197,13 @@ def main(args):
                 file_writer_train.add_summary(summary_train, global_step=i_iter)
                 file_writer_test.add_summary(summary_test, global_step=i_iter)
 
-                print('Iteration: %d, train x : [%g, %g], train ab: [%g, %g]' % (step, train_x_loss, train_x_acc, train_ab_loss, train_ab_acc))
-                print('==> CUB: [%g, %g]' % (cub_loss, cub_acc))
+                print('Iteration: %d, train x : [%f, %f], train ab: [%f, %f]' % (i_iter+1, train_x_loss, train_x_acc, train_ab_loss, train_ab_acc))
+                print('==> CUB: [%f, %f]' % (cub_loss, cub_acc))
 
             # save session every 2000 iteration
-            if step % 2000 == 0:    
-                saver.save(sess, checkpoint_file, global_step=step)
-                print('Save session at step %d' % step)
+            if (i_iter+1) % 2000 == 0:    
+                saver.save(sess, checkpoint_file, global_step=(i_iter+1))
+                print('Save session at step %d' % (i_iter+1))
 
         file_writer_train.close()
         file_writer_test.close()
