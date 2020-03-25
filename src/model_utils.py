@@ -51,7 +51,7 @@ def convolution_layer(inputs,
             net = tf.add(net, bias)
 
         if is_bn:
-            net = batchnorm_conv(net, is_training=is_training)
+            net = batchnorm_conv(net, name=name, is_training=is_training)
 
         if activat_fn is not None:
             net = activat_fn(net, name=name+"_out")
@@ -60,7 +60,7 @@ def convolution_layer(inputs,
             net = tf.reshape(net, [-1, int(np.prod(net.get_shape()[1:]))], name=name+"_flatout")
     return net
 
-def batchnorm_conv(inputs, name=[], is_training=tf.cast(True, tf.bool)):
+def batchnorm_conv(inputs, name, is_training=tf.cast(True, tf.bool)):
     with tf.variable_scope(name+"_bn", reuse=tf.AUTO_REUSE):
         inputs = tf.identity(inputs)
         channels = inputs.get_shape()[3]

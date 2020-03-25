@@ -160,7 +160,7 @@ class RelationNet(object):
     def resnet10_encoder_meta(self, inputs, weights, is_training=True):
 
         # conv 1
-        x =         convolution_layer_meta(inputs, weights['conv1'], weights['b1'], [1, 2, 2, 1], name='conv1', is_training=is_training, is_bn=True, padding="VALID")
+        x =         convolution_layer_meta(inputs, weights['conv1'], weights['b1'], [1, 2, 2, 1], name='conv1', is_training=is_training, is_bn=True, padding="SAME")
         x =         max_pool(x, [1, 3, 3, 1], [1, 2, 2, 1], name='max_1', padding='SAME')
 
         # conv 2
