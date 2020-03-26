@@ -25,7 +25,7 @@ parser.add_argument('--log_path', default='baseline', type=str)
 parser.add_argument('--test_name', default='test', type=str)
 parser.add_argument('--n_way', default=5, type=int)
 parser.add_argument('--n_shot', default=5, type=int)
-parser.add_argument('--n_query', default=15, type=int)
+parser.add_argument('--n_query', default=16, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--n_iter', default=40000, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
@@ -36,8 +36,8 @@ def model_summary():
     slim.model_analyzer.analyze_vars(model_vars, print_info=True)
 
 def main(args):
-    img_w = 84
-    img_h = 84
+    img_w = 224
+    img_h = 224
     
     n_way = args.n_way
     n_shot = args.n_shot
@@ -57,13 +57,16 @@ def main(args):
 
     # feature extractor
     init_lr = args.lr
-    model = RelationNet(n_way, n_shot, n_query, backbone='conv4', learning_rate=init_lr, is_training=is_training)
-    train_op, train_loss, train_acc, global_step = model.train(support=support_a_reshape, query=query_b_reshape)
+    model = RelationNet(n_way, n_shot, n_query, backbone='resnet',
+                        learning_rate=init_lr, is_training=is_training)
+    train_op, train_loss, train_acc, global_step = model.train(
+        support=support_a_reshape, query=query_b_reshape)
     
     model_summary()
 
     ## establish test graph
-    model_test = RelationNet(n_way, n_shot, n_query, backbone='conv4', learning_rate=init_lr, is_training=is_training)
+    model_test = RelationNet(n_way, n_shot, n_query, backbone='resnet',
+                             learning_rate=init_lr, is_training=is_training)
     test_loss, test_acc = model_test.test(support=support_a_reshape, query=query_b_reshape)
 
     # saver for saving session
