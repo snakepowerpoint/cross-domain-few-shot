@@ -27,8 +27,11 @@ parser.add_argument('--test_name', default='test_meta', type=str)
 parser.add_argument('--n_way', default=5, type=int)
 parser.add_argument('--n_shot', default=5, type=int)
 parser.add_argument('--n_query', default=16, type=int)
-parser.add_argument('--lr', default=1e-3, type=float)
-parser.add_argument('--n_iter', default=400000, type=int)
+parser.add_argument('--alpha', default=1e-3, type=float)
+parser.add_argument('--beta', default=1.0, type=float)
+parser.add_argument('--gamma', default=5e-3, type=float)
+parser.add_argument('--decay', default=0.96, type=float)
+parser.add_argument('--n_iter', default=40000, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
 
 
@@ -43,6 +46,10 @@ def main(args):
     n_way = args.n_way
     n_shot = args.n_shot
     n_query = args.n_query
+    alpha = args.alpha
+    beta = args.beta
+    gamma = args.gamma
+    decay = args.decay
        
     ## establish training graph
     # inputs placeholder (support and query randomly sampled from two domain)
@@ -71,18 +78,21 @@ def main(args):
 
     # Meta-RelationNet
     print("=== Build model...")
-    print("learning rate: ", args.lr)
-    init_lr = args.lr
-    model = RelationNet(n_way, n_shot, n_query, backbone='resnet', learning_rate=init_lr, is_training=is_training)
-    model.train_meta(   support_x=support_x_reshape, query_x=query_x_reshape, 
-                        support_a=support_a_reshape, query_b=query_b_reshape)
+    print("First learning rate: ", alpha)
+    print("beta: ", beta)
+    print("Second learning rate: ", gamma)
+    print("Decay second learning rate: ", decay)
+    model = RelationNet(n_way, n_shot, n_query, alpha=alpha, beta=beta, gamma=gamma, decay=decay,
+                        backbone='resnet', is_training=is_training)
+    model.train_meta(support_x=support_x_reshape, query_x=query_x_reshape, 
+                     support_a=support_a_reshape, query_b=query_b_reshape)
 
     model_summary()
 
     # saver for saving session
     saver = tf.train.Saver()
-    log_path = os.path.join('logs', args.log_path,
-                            '_'.join((args.test_name, 'lr'+str(args.lr))))
+    log_path = os.path.join('logs', args.log_path, '_'.join(
+        (args.test_name, 'alpha'+str(alpha), 'beta'+str(beta), 'gamma'+str(gamma), 'decay'+str(decay))))
     
     checkpoint_file = log_path + "/checkpoint.ckpt"
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
@@ -109,7 +119,7 @@ def main(args):
     pacs = Pacs()
 
     # load CUB data
-    cub = Cub(size=(224, 224), mode='test')
+    cub = Cub(mode='test')
     
     ## training
     with tf.Session() as sess:
@@ -133,8 +143,8 @@ def main(args):
 
         # get test unseen domains
         domains = list(pacs.data_dict.keys())
-        # test_domain = domains[2]
-        # domains.pop(2)
+        test_domain = 'sketch'
+        domains.remove(test_domain)
 
         domain_a = domains[0]
         domain_b = domains[1]
@@ -164,20 +174,24 @@ def main(args):
             sess.run([model.meta_op], feed_dict={
                 support_x: curr_support_x,
                 query_x: curr_query_x,
-                support_a: curr_support_x,
-                query_b: curr_query_x,                
+                support_a: curr_support_a,
+                query_b: curr_query_b,                
                 is_training: True
             })
 
+            # evaluation
             if i_iter % 50 == 0:
-                # evaluation
+                curr_support_x, curr_query_x = mini.get_task(n_way, n_shot, n_query, aug=False, mode='val')
+                curr_support_a, curr_query_a = pacs.get_task(
+                    test_domain, selected_categories, n_shot, n_query, aug=False)
+                
                 summary_train, train_x_loss, train_x_acc, train_ab_loss, train_ab_acc = \
                     sess.run([merged, model.x_loss, model.x_acc, model.ab_loss, model.ab_acc], 
                         feed_dict={
                             support_x: curr_support_x,
                             query_x: curr_query_x,
-                            support_a: curr_support_x,
-                            query_b: curr_query_x,                
+                            support_a: curr_support_a,
+                            query_b: curr_query_a,                
                             is_training: False
                         })
 
@@ -197,7 +211,8 @@ def main(args):
                 file_writer_train.add_summary(summary_train, global_step=i_iter)
                 file_writer_test.add_summary(summary_test, global_step=i_iter)
 
-                print('Iteration: %d, train x : [%f, %f], train ab: [%f, %f]' % (i_iter+1, train_x_loss, train_x_acc, train_ab_loss, train_ab_acc))
+                print('Iteration: %d, train x : [%f, %f], train ab: [%f, %f]' % 
+                    (i_iter+1, train_x_loss, train_x_acc, train_ab_loss, train_ab_acc))
                 print('==> CUB: [%f, %f]' % (cub_loss, cub_acc))
 
             # save session every 2000 iteration
