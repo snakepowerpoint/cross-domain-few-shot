@@ -17,3 +17,7 @@
 /data/pacs_pre-read
 /data/*.zip
 /data/*.pickle
+
+
+##
+/misc

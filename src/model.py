@@ -10,7 +10,7 @@ class PrototypeNet(object):
         self.n_shot = n_shot
         self.n_query = n_query
         self.backbone = backbone
-        self.lr = learning_rate
+        self.gamma = learning_rate
         self.is_training = is_training
     
     def cnn4_encoder(self, inputs, is_training=True, reuse=False):
@@ -86,7 +86,7 @@ class PrototypeNet(object):
 
         # optimizer
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        rate = tf.train.exponential_decay(self.lr, global_step, 2000, 0.5, staircase=True)
+        rate = tf.train.exponential_decay(self.gamma, global_step, 2000, 0.5, staircase=True)
         optimizer = tf.train.AdamOptimizer(rate)
         self.train_op = optimizer.minimize(self.train_loss, global_step=global_step)
 
@@ -117,12 +117,15 @@ class PrototypeNet(object):
 
 
 class RelationNet(object):
-    def __init__(self, n_way, n_shot, n_query, backbone, learning_rate, is_training):
+    def __init__(self, n_way, n_shot, n_query, alpha, beta, gamma, decay, backbone, is_training):
         self.n_way = n_way
         self.n_shot = n_shot
         self.n_query = n_query
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.decay = decay
         self.backbone = backbone
-        self.lr = learning_rate
         self.is_training = is_training
 
     def cnn4_encoder(self, inputs, is_training=True, reuse=False):
@@ -273,7 +276,7 @@ class RelationNet(object):
         x = fc_layer_meta(x, weights['fc3'], weights['b3'], name='fc3', activat_fn=tf.nn.relu)
 
         # fc 4
-        x = fc_layer_meta(x, weights['fc4'], weights['b4'], name='fc4', activat_fn=tf.nn.sigmoid)
+        x = fc_layer_meta(x, weights['fc4'], weights['b4'], name='fc4', activat_fn=None)
 
         return x
 
@@ -352,14 +355,14 @@ class RelationNet(object):
 
         # optimize
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        rate = self.lr
-        # rate = tf.train.exponential_decay(self.lr, global_step, 5000, 0.5, staircase=True)
+        rate = self.gamma
+        # rate = tf.train.exponential_decay(self.gamma, global_step, 5000, 0.5, staircase=True)
         optimizer = tf.train.AdamOptimizer(rate)
         self.train_op = optimizer.minimize(self.train_loss, global_step=global_step)
         
         return self.train_op, self.train_loss, self.train_acc, global_step
 
-    def train_meta(self, support_x, query_x, support_a, query_b, reguarlized=False):
+    def train_meta(self, support_x, query_x, support_a, query_b, regularized=False):
         
         ### build model
         # create network variables
@@ -394,7 +397,7 @@ class RelationNet(object):
         self.x_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations_x, axis=-1), labels)))
 
         # l2 reg
-        if reguarlized:
+        if regularized:
             train_vars = tf.trainable_variables()
             l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'conv' in v.name]) * 1e-8
             self.x_loss = tf.add(self.x_loss, l2_loss)
@@ -409,9 +412,9 @@ class RelationNet(object):
 
         # theta_pi = theta - alpha * grads
         fast_res10_weights =    dict(zip(res10_weights.keys(),        
-                                        [res10_weights[key] - self.lr * res10_gvs[key] for key in res10_weights.keys()]))
+                                        [res10_weights[key] - self.alpha * res10_gvs[key] for key in res10_weights.keys()]))
         fast_relation_weights = dict(zip(relation_weights.keys(),        
-                                        [relation_weights[key] - self.lr * relation_gvs[key] for key in relation_weights.keys()]))
+                                        [relation_weights[key] - self.alpha * relation_gvs[key] for key in relation_weights.keys()]))
 
         # use theta_pi to forward meta-test - for support a & query b =================================================================
         support_a_encode = self.resnet10_encoder_meta(support_a, fast_res10_weights, is_training=self.is_training)
@@ -437,16 +440,21 @@ class RelationNet(object):
         self.ab_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations_ab, axis=-1), labels)))
 
         # l2 reg
-        if reguarlized:
+        if regularized:
             train_vars = tf.trainable_variables()
             l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'conv' in v.name]) * 1e-8
             self.ab_loss = tf.add(self.ab_loss, l2_loss)
 
         # optimizer
-        #optimizer = tf.train.AdamOptimizer(self.lr, name="meta_opt")
+        #optimizer = tf.train.AdamOptimizer(self.gamma, name="meta_opt")
         #gvs = optimizer.compute_gradients(self.ab_loss)
         #self.meta_op = optimizer.apply_gradients(gvs)
-        self.meta_op = tf.train.AdamOptimizer(self.lr, beta1=0.5, beta2=0.9, name="meta_opt").minimize(self.x_loss)
+        self.total_loss = tf.add(self.x_loss, self.beta * self.ab_loss)
+        global_step = tf.Variable(0, trainable=False, name='global_step')
+        if self.decay is not None:
+            self.gamma = tf.train.exponential_decay(self.gamma, global_step, 15000, self.decay, staircase=True)
+        self.meta_op = tf.train.GradientDescentOptimizer(
+            self.gamma, name="meta_opt").minimize(self.total_loss, global_step=global_step)
 
     # need to correct
     def test(self, support, query, regularized=True):
