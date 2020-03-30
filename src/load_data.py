@@ -23,21 +23,21 @@ class Pacs(object):
         self.data_dict = self._load_data()
     
     def _load_data(self):
-        data_path = os.path.join(self.data_path, 'pacs.pickle')
+        data_path = os.path.join(self.data_path, 'pacs_split.pickle')
         with open(data_path, 'rb') as f:
             data_dict = pickle.load(f)
         return data_dict
 
-    def get_task(self, domain, categories, n_shot=5, n_query=15, size=(224, 224), aug=True):
+    def get_task(self, domain, categories, n_shot=5, n_query=15, size=(224, 224), aug=True, mode='train'):
         n_way = len(categories)
         support = np.empty((n_way, n_shot, size[0], size[1], 3))
         query = np.empty((n_way, n_query, size[0], size[1], 3))
         for i, category in enumerate(categories):
-            num_img = len(self.data_dict[domain][category])
+            num_img = len(self.data_dict[mode][domain][category])
             selected_imgs = random.sample(range(num_img), k=n_shot+n_query)
             
-            s_imgs = self.data_dict[domain][category][selected_imgs[:n_shot]]
-            q_imgs = self.data_dict[domain][category][selected_imgs[n_shot:]]
+            s_imgs = self.data_dict[mode][domain][category][selected_imgs[:n_shot]]
+            q_imgs = self.data_dict[mode][domain][category][selected_imgs[n_shot:]]
 
             support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
             query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
