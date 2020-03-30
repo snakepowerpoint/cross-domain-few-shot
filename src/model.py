@@ -117,7 +117,16 @@ class PrototypeNet(object):
 
 
 class RelationNet(object):
-    def __init__(self, n_way, n_shot, n_query, alpha, beta, gamma, decay, backbone, is_training):
+    def __init__(self,
+                 n_way,
+                 n_shot,
+                 n_query,
+                 alpha=1e-3,
+                 beta=1.0,
+                 gamma=5e-3,
+                 decay=0.96, 
+                 backbone='resnet',
+                 is_training=True):
         self.n_way = n_way
         self.n_shot = n_shot
         self.n_query = n_query
@@ -493,3 +502,4 @@ class RelationNet(object):
             self.test_loss = tf.add(self.test_loss, l2_loss)
         
         return self.test_loss, self.test_acc
+
