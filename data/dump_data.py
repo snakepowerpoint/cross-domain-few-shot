@@ -52,23 +52,41 @@ class Pacs(object):
         self.categories = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person']
         self.data_path = '/data/common/cross-domain-few-shot/pacs'
 
-    def load_data(self, is_aug=True, is_normalize=True):
-        data_dict = {}        
+    def load_data(self):
+        data_dict = {}
+        data_dict['train'] = {}
+        data_dict['val'] = {}
+
         for domain in self.domains:
-            data_dict[domain] = {}
+            data_dict['train'][domain] = {}
+            data_dict['val'][domain] = {}
+
             domain_path = os.path.join(self.data_path, domain)
             for category in self.categories:
-                data_dict[domain][category] = []
+                data_dict['train'][domain][category] = []
+                data_dict['val'][domain][category] = []
+
                 category_path = os.path.join(domain_path, category)
                 img_files = os.listdir(category_path)
-                for img_file in img_files:
+                random.shuffle(img_files)
+                train_val_split = len(img_files) - 21
+                for img_file in img_files[:train_val_split]:
                     path = os.path.join(category_path, img_file)
                     img = scipy.misc.imread(path, mode='RGB').astype(np.uint8)
                     img = Image.fromarray(img)
                     img = np.array(img.resize((224, 224)))
                     img = np.expand_dims(img, axis=0)
-                    data_dict[domain][category].append(img)
-                data_dict[domain][category] = np.concatenate(data_dict[domain][category])      
+                    data_dict['train'][domain][category].append(img)
+                data_dict['train'][domain][category] = np.concatenate(data_dict['train'][domain][category])
+
+                for img_file in img_files[train_val_split:]:
+                    path = os.path.join(category_path, img_file)
+                    img = scipy.misc.imread(path, mode='RGB').astype(np.uint8)
+                    img = Image.fromarray(img)
+                    img = np.array(img.resize((224, 224)))
+                    img = np.expand_dims(img, axis=0)
+                    data_dict['val'][domain][category].append(img)
+                data_dict['val'][domain][category] = np.concatenate(data_dict['val'][domain][category])  
         return data_dict
     
 
