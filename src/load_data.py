@@ -12,7 +12,7 @@ from .color_jitter import ColorJitter, RandomResizedCrop
 import timeit
 
 # identify server mac
-from uuid import getnode as get_mac
+import netifaces
 
 # for mini-imagenet
 mean = [0.485, 0.456, 0.406]
@@ -317,10 +317,13 @@ def center_crop(img, size):
     return np.array(img)
 
 def define_dir_by_mac():
-    self.mac = get_mac()
+    interfaces = netifaces.interfaces()
     
-    if self.mac == 189250941727334:
-        self.default_path = "/data/common/"
-    
-    elif self.mac == 229044592702658:
-        self.default_path = "/home/sdc1/"
+    if 'enp129s0f0' in interfaces:
+        default_path = "/data/common/"
+
+    else:
+        print("Undefined interface: ", interfaces)
+        default_path = "/home/sdc1/dataset/"
+
+    return default_path
