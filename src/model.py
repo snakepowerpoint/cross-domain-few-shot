@@ -255,6 +255,11 @@ class RelationNet(object):
 
             return weights        
 
+    def resnet10_classifier(self, inputs):
+        with tf.variable_scope('res10_cls', reuse=tf.AUTO_REUSE):
+            net = fc_layer(inputs, 64, name='fc', activat_fn=None)        
+        return net
+
     def relation_module(self, inputs, loss_type='softmax', is_training=True, reuse=False):
         with tf.variable_scope('relation_mod', reuse=reuse):
             net = convolution_layer(inputs, [3, 3, 64], [1, 1, 1, 1], is_bn=True, activat_fn=tf.nn.relu,
@@ -274,18 +279,18 @@ class RelationNet(object):
     def relation_module_meta(self, inputs, weights, loss_type='softmax', is_training=True):
         
         # conv 1
-        x =         convolution_layer_meta(inputs, weights['conv1'], weights['b1'], [1, 1, 1, 1], name='conv1', is_training=is_training, is_bn=True, padding="SAME")
+        x =         convolution_layer_meta(inputs, weights['conv1'], weights['b1'], [1, 1, 1, 1], name='M_conv1', is_training=is_training, is_bn=True, padding="SAME")
         x =         max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], name='max_1', padding='VALID')        
         
         # conv 2
-        x =         convolution_layer_meta(x, weights['conv2'], weights['b2'], [1, 1, 1, 1], name='conv2', is_training=is_training, is_bn=True, padding="SAME")
+        x =         convolution_layer_meta(x, weights['conv2'], weights['b2'], [1, 1, 1, 1], name='M_conv2', is_training=is_training, is_bn=True, padding="SAME")
         x =         max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], name='max_2', padding='VALID')  
 
         # fc 3
-        x = fc_layer_meta(x, weights['fc3'], weights['b3'], name='fc3', activat_fn=tf.nn.relu)
+        x = fc_layer_meta(x, weights['fc3'], weights['b3'], name='M_fc3', activat_fn=tf.nn.relu)
 
         # fc 4
-        x = fc_layer_meta(x, weights['fc4'], weights['b4'], name='fc4', activat_fn=None)
+        x = fc_layer_meta(x, weights['fc4'], weights['b4'], name='M_fc4', activat_fn=None)
 
         return x
 
@@ -465,6 +470,30 @@ class RelationNet(object):
         self.meta_op = tf.train.GradientDescentOptimizer(
             self.gamma, name="meta_opt").minimize(self.total_loss, global_step=global_step)
 
+    def train_baseline(self, inputs, labels, learning_rate, batch_size=64, regularized=False):
+        
+        ### build model
+        # create network variables
+        self.res10_weights = res10_weights = self.resnet10_encoder_weights()
+
+        # build res10 network - for support & query x =================================================================================      
+        encode = self.resnet10_encoder_meta(inputs, res10_weights, is_training=self.is_training)
+        #h, w, c = encode.get_shape().as_list()[1:]
+        encode = tf.reduce_sum(encode, axis=[1,2])
+        pred = self.resnet10_classifier(encode)
+
+        # x loss & acc
+        self.loss = self.ce_loss(y_pred=pred, y_true=labels)
+        self.acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(pred, axis=-1), tf.argmax(labels, axis=-1))))
+
+        # optimizer
+        global_step = tf.Variable(0, trainable=False, name='global_step')
+        if self.decay is not None:
+            self.gamma = tf.train.exponential_decay(self.gamma, global_step, 15000, self.decay, staircase=True)
+
+        self.train_op = tf.train.AdamOptimizer(
+            learning_rate, name="train_op").minimize(self.loss, global_step=global_step)
+
     # need to correct
     def test(self, support, query, regularized=True):
         # support
@@ -502,4 +531,3 @@ class RelationNet(object):
             self.test_loss = tf.add(self.test_loss, l2_loss)
         
         return self.test_loss, self.test_acc
-
