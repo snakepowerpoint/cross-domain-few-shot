@@ -11,6 +11,8 @@ import scipy.misc
 from .color_jitter import ColorJitter, RandomResizedCrop
 import timeit
 
+# identify server mac
+from uuid import getnode as get_mac
 
 # for mini-imagenet
 mean = [0.485, 0.456, 0.406]
@@ -19,7 +21,8 @@ std = [0.229, 0.224, 0.225]
 
 class Pacs(object):
     def __init__(self):
-        self.data_path = '/data/common/cross-domain-few-shot/'
+        self.data_path_base = define_dir_by_mac()
+        self.data_path = self.data_path_base + 'cross-domain-few-shot/'
         self.data_dict = self._load_data()
     
     def _load_data(self):
@@ -55,7 +58,8 @@ class Pacs(object):
 
 class Omniglot(object):
     def __init__(self):
-        self.data_path = '/data/common/cross-domain-few-shot/'
+        self.data_path_base = define_dir_by_mac()
+        self.data_path = self.data_path_base + 'cross-domain-few-shot/'
         self.data_dict = self._load_data()
 
     def _load_data(self):
@@ -106,7 +110,8 @@ class Omniglot(object):
 
 class Cub(object):
     def __init__(self, mode='test'):
-        self.data_path = '/data/common/cross-domain-few-shot/'
+        self.data_path_base = define_dir_by_mac()
+        self.data_path = self.data_path_base + 'cross-domain-few-shot/'
         self.mode = mode
         self.data_dict = self._load_data()
         
@@ -144,7 +149,8 @@ class Cub(object):
 
 class MiniImageNet(object):
     def __init__(self, resize=False):
-        self.data_path = '/data/common/cross-domain-few-shot/mini-imagenet'
+        self.data_path_base = define_dir_by_mac()
+        self.data_path = self.data_path_base + 'cross-domain-few-shot/mini-imagenet'
         self.resize = resize
         self.data_dict = self._load_data()
         self.label_dict = self._label_mapping() # wei, for pretrain baseline training data
@@ -309,3 +315,12 @@ def center_crop(img, size):
     img = img.crop((left, top, right, bottom))
     img = img.resize((width, height))
     return np.array(img)
+
+def define_dir_by_mac():
+    self.mac = get_mac()
+    
+    if self.mac == 189250941727334:
+        self.default_path = "/data/common/"
+    
+    elif self.mac == 229044592702658:
+        self.default_path = "/home/sdc1/"
