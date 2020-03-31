@@ -28,19 +28,28 @@ class Pacs(object):
             data_dict = pickle.load(f)
         return data_dict
 
-    def get_task(self, domain, categories, n_shot=5, n_query=15, size=(224, 224), aug=True, mode='train'):
+    def get_task(self, domain, categories, n_shot=5, n_query=15, size=(224, 224), aug=True, mode='train', target='all'):
         n_way = len(categories)
         support = np.empty((n_way, n_shot, size[0], size[1], 3))
         query = np.empty((n_way, n_query, size[0], size[1], 3))
         for i, category in enumerate(categories):
             num_img = len(self.data_dict[mode][domain][category])
             selected_imgs = random.sample(range(num_img), k=n_shot+n_query)
-            
-            s_imgs = self.data_dict[mode][domain][category][selected_imgs[:n_shot]]
-            q_imgs = self.data_dict[mode][domain][category][selected_imgs[n_shot:]]
 
-            support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
-            query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
+            if target == 'all':
+                s_imgs = self.data_dict[mode][domain][category][selected_imgs[:n_shot]]
+                q_imgs = self.data_dict[mode][domain][category][selected_imgs[n_shot:]]
+                support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
+                query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
+
+            elif target == 'support':
+                s_imgs = self.data_dict[mode][domain][category][selected_imgs[:n_shot]]
+                support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
+
+            elif target == 'query':
+                q_imgs = self.data_dict[mode][domain][category][selected_imgs[n_shot:]]
+                query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
+
         return support, query
 
 
@@ -114,7 +123,7 @@ class Cub(object):
         
         return data_dict
 
-    def get_task(self, n_way=5, n_shot=5, n_query=15, size=(224, 224), aug=False):
+    def get_task(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=False):
         mode = self.mode
         selected_categories = random.sample(list(self.data_dict[mode].keys()), k=n_way)
 
@@ -138,6 +147,7 @@ class MiniImageNet(object):
         self.data_path = '/data/common/cross-domain-few-shot/mini-imagenet'
         self.resize = resize
         self.data_dict = self._load_data()
+        self.label_dict = self._label_mapping() # wei, for pretrain baseline training data
         
     def _load_data(self):
         train_data_path = os.path.join(self.data_path, 'mini-imagenet-cache-train.pkl')
@@ -155,6 +165,15 @@ class MiniImageNet(object):
             data_dict = self._resize(data_dict)
             data_dict = self._normalized(data_dict)
         return data_dict
+    
+    def _label_mapping(self):
+        # make label mapping list 
+        label_dict = dict()
+        category_list = list(self.data_dict['train']['class_dict'].keys())
+        for i, category in enumerate(category_list):
+            label_dict[category] = i
+
+        return label_dict
     
     def _normalized(self, data_dict):
         data_dict['train']['image_data'] = data_dict['train']['image_data'] / 255.0 
@@ -174,22 +193,60 @@ class MiniImageNet(object):
             data_dict[dataset]['image_data'] = np.stack(image_data)
         return data_dict
     
-    def get_task(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=True, mode='train'):
+    def get_task(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=True, mode='train', target='all'):
         support = np.empty((n_way, n_shot, size[0], size[1], 3))
         query = np.empty((n_way, n_query, size[0], size[1], 3))
         selected_categories = random.sample(list(self.data_dict[mode]['class_dict'].keys()), k=n_way)
+
         for i, category in enumerate(selected_categories):
             selected_imgs = random.sample(
                 self.data_dict[mode]['class_dict'][category], k=n_shot+n_query)
-            
-            s_imgs = self.data_dict[mode]['image_data'][selected_imgs[:n_shot]]
-            q_imgs = self.data_dict[mode]['image_data'][selected_imgs[n_shot:]]
 
-            support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
-            query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
+            if target == 'all':
+                s_imgs = self.data_dict[mode]['image_data'][selected_imgs[:n_shot]]
+                q_imgs = self.data_dict[mode]['image_data'][selected_imgs[n_shot:]]
+                support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
+                query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
+
+            elif target == 'support':
+                s_imgs = self.data_dict[mode]['image_data'][selected_imgs[:n_shot]]
+                support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
+                
+            elif target == 'query':
+                q_imgs = self.data_dict[mode]['image_data'][selected_imgs[n_shot:]]
+                query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
 
         return support, query
     
+    def get_batch(self, batch_size=64, size=(224, 224), aug=True, mode='train'):
+        if batch_size % 64 != 0:
+            print(">>> batch_size = {} should be divisible by 64.".format(batch_size))
+            return None, None
+        
+        img_batch = np.empty((batch_size, 84, 84, 3), dtype=np.uint8)
+        img_label = np.empty((batch_size, 64), dtype=np.uint8)
+        img_count = 0
+        for category in list(self.data_dict['train']['class_dict'].keys()):     
+            # wei, "train" and "val" contrain different classes, and here, we only use images from "train" data to do the validation.
+            # Hence, the mode is "val" though, we still get the data from "train".
+            if mode == 'train':      
+                selected_imgs = random.sample(self.data_dict[mode]['class_dict'][category][:500], k=(batch_size//64))            
+            elif mode == 'val':   
+                selected_imgs = random.sample(self.data_dict['train']['class_dict'][category][501:], k=(batch_size//64))            
+            
+            # wei, get the label of the current class from the dict.
+            curr_label = np.zeros((1, 64))
+            curr_label[0, self.label_dict[category]] = 1
+
+            for j in selected_imgs:
+                s_img = self.data_dict['train']['image_data'][j]
+                img_batch[img_count] = s_img
+                img_label[img_count] = curr_label
+                img_count += 1
+            
+        img_batch = resize_batch_img(img_batch, size=size, aug=aug)
+
+        return img_batch, img_label
 
 def resize_batch_img(imgs, size, aug):       
     resized_img = np.empty((imgs.shape[0], size[0], size[1], 3))
@@ -197,7 +254,8 @@ def resize_batch_img(imgs, size, aug):
         
         if aug:
             i_img = augmentation(i_img, size=84)
-            resized_img[i] = cv2.resize(i_img, size)
+            #resized_img[i] = cv2.resize(i_img, size) # wei, cv2 will change value range
+            resized_img[i] = i_img
         else:
             i_img = center_crop(i_img, size=size)
             i_img = ((i_img / 255.0) - mean) / std
@@ -212,7 +270,7 @@ def augmentation(img, size):
         _color_jitter = ColorJitter(_transform_dict)
         
         img = _color_jitter(img)
-        img = np.array(img)
+        #img = np.array(img) # wei, no need
         return img
 
     def random_horizontal_flip(img):
@@ -229,6 +287,7 @@ def augmentation(img, size):
     _random_resized_crop = RandomResizedCrop(size=size)
     img = _random_resized_crop(img)
     img = jitter(img)
+    img = np.array(img.resize((224, 224))) # wei, use PIL lib to resize here
     img = random_horizontal_flip(img)
     img = normalize(img)
     return img
@@ -236,7 +295,7 @@ def augmentation(img, size):
 
 def center_crop(img, size):
     height, width = size
-    new_height, new_width = tuple(int(i*1.15) for i in size)
+    new_height, new_width = [int(height*1.15), int(width*1.15)] # wei
     
     img = Image.fromarray(img)
     img = img.resize((new_width, new_height))

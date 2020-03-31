@@ -155,8 +155,8 @@ def convolution_layer_meta(inputs, weight, bias, strides, name, is_training=True
 
     x = tf.nn.conv2d(inputs, weight, strides, padding, name=name + '_conv2d') + bias
     
-    #if is_bn == True:
-    #    x = batchnorm_conv(x, name=name, is_training=is_training)
+    if is_bn == True:
+        x = batchnorm_conv(x, name=name, is_training=is_training)
 
     if activat_fn is not None:
         x = activat_fn(x, name=name + "_out")
