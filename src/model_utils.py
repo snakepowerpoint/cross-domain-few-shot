@@ -7,15 +7,15 @@ import numpy as np
 def residual_simple_block(inputs, out_dim, block, is_half=False, is_training=True):
     with tf.variable_scope('block{}'.format(block)):
         if is_half:
-            net = convolution_layer(inputs, [3, 3, out_dim], stride=[1, 2, 2, 1], bias=False,
+            net = convolution_layer(inputs, [3, 3, out_dim], stride=[1, 2, 2, 1], is_bias=False,
                                     name='conv1', is_bn=True, activat_fn=tf.nn.relu, is_training=is_training)
-            short_cut = convolution_layer(inputs, [1, 1, out_dim], stride=[1, 2, 2, 1], bias=False,
+            short_cut = convolution_layer(inputs, [1, 1, out_dim], stride=[1, 2, 2, 1], is_bias=False,
                                           name='short_cut', is_bn=True, activat_fn=None, is_training=is_training)
         else:
-            net = convolution_layer(inputs, [3, 3, out_dim], stride=[1, 1, 1, 1], bias=False,
+            net = convolution_layer(inputs, [3, 3, out_dim], stride=[1, 1, 1, 1], is_bias=False,
                                     name='conv1', is_bn=True, activat_fn=tf.nn.relu, is_training=is_training)
             short_cut = inputs
-        net = convolution_layer(net, [3, 3, out_dim], stride=[1, 1, 1, 1], bias=False,
+        net = convolution_layer(net, [3, 3, out_dim], stride=[1, 1, 1, 1], is_bias=False,
                                 name='conv2', is_bn=True, activat_fn=None, is_training=is_training)
         net = tf.add(net, short_cut)
         net = tf.nn.relu(net, name="out")
@@ -29,7 +29,7 @@ def convolution_layer(inputs,
                       stride,
                       name,
                       padding='SAME',
-                      bias=True,
+                      is_bias=True,
                       initializer=tf.contrib.layers.xavier_initializer(),
                       is_bn=False,
                       activat_fn=tf.nn.relu,
@@ -45,7 +45,7 @@ def convolution_layer(inputs,
             "weights", rkernel_shape, tf.float32, initializer=initializer, regularizer=reg)
         net = tf.nn.conv2d(inputs, weight, stride, padding=padding)
 
-        if bias:
+        if is_bias:
             bias = tf.get_variable(
                 "bias", kernel_shape[2], tf.float32, initializer=tf.zeros_initializer())
             net = tf.add(net, bias)
@@ -127,6 +127,39 @@ def fc_layer(inputs,
 
         # Note that the '+' operation automatically broadcasts the bias.
         net = tf.nn.bias_add(tf.matmul(net, weight), bias)
+        if activat_fn is not None:
+            net = activat_fn(net, name=name+"_out")
+        return net
+
+
+def fc_layer_test(inputs, 
+                  output_shape,
+                  name,
+                  is_bias=True,
+                  initializer=tf.contrib.layers.xavier_initializer(),
+                  activat_fn=tf.nn.relu,
+                  reg=None):
+    '''
+    Args
+
+    '''
+    with tf.variable_scope(name):
+        shape = inputs.get_shape().as_list()
+        dim = 1
+        for d in shape[1:]:
+            dim *= d
+        net = tf.reshape(inputs, [-1, dim])
+
+        weight = tf.get_variable(
+            "weights", [dim, output_shape], tf.float32, initializer=initializer, regularizer=reg)
+        net = tf.matmul(net, weight)
+        
+        if is_bias:
+            bias = tf.get_variable(
+                "bias", [output_shape], tf.float32, initializer=tf.zeros_initializer())
+        # Note that the '+' operation automatically broadcasts the bias.
+        net = tf.nn.bias_add(net, bias)
+
         if activat_fn is not None:
             net = activat_fn(net, name=name+"_out")
         return net
