@@ -111,10 +111,16 @@ class Omniglot(object):
 class Cub(object):
     def __init__(self, mode='test'):
         self.data_path_base = define_dir_by_mac()
-        self.data_path = self.data_path_base + 'cross-domain-few-shot/'
+        #self.data_path = self.data_path_base + 'cross-domain-few-shot/' # wei, no need to load pickle anymore
         self.mode = mode
-        self.data_dict = self._load_data()
+        #self.data_dict = self._load_data() # wei, no need to load pickle anymore
         
+        self.raw_data_path = '/data/common/cross-domain-few-shot/cub200/CUB_200_2011/images' 
+        self.raw_folder_list = [os.path.join(self.raw_data_path, f) for f in os.listdir(self.raw_data_path)]
+        self.raw_img_list = {}
+        for f in self.raw_folder_list:
+            self.raw_img_list[f] = [os.path.join(f, img) for img in os.listdir(f)]
+
     def _load_data(self):
         data_path = os.path.join(self.data_path, 'cub.pickle')
         with open(data_path, 'rb') as f:
@@ -146,6 +152,24 @@ class Cub(object):
 
         return support, query
 
+    def get_task_from_raw(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=False):
+        selected_categories = random.sample(self.raw_folder_list, k=n_way)
+        
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
+
+        for i, category in enumerate(selected_categories):
+            selected_imgs_path = random.sample(self.raw_img_list[category], k=n_shot+n_query)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                support[i][j] = resize_img(curr_img, size=size, aug=aug)
+            
+            for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                query[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+        return support, query
 
 class MiniImageNet(object):
     def __init__(self, resize=False):
@@ -269,6 +293,15 @@ def resize_batch_img(imgs, size, aug):
         
     return resized_img
 
+def resize_img(img, size, aug): # wei, for process single image       
+
+    if aug:
+        resized_img = augmentation(img, size=84)
+    else:
+        img = center_crop(img, size=size)
+        resized_img = ((img / 255.0) - mean) / std
+        
+    return resized_img
 
 def augmentation(img, size):
     def jitter(img):
@@ -300,7 +333,7 @@ def augmentation(img, size):
 
 
 def center_crop(img, size):
-    height, width = size
+    height, width = img.shape[0], img.shape[1]
     new_height, new_width = [int(height*1.15), int(width*1.15)] # wei
     
     img = Image.fromarray(img)
@@ -313,7 +346,7 @@ def center_crop(img, size):
 
     # Crop the center of the image
     img = img.crop((left, top, right, bottom))
-    img = img.resize((width, height))
+    img = img.resize(size)
     return np.array(img)
 
 def define_dir_by_mac():
