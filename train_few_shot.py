@@ -15,7 +15,7 @@ import argparse
 
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
-from src.model import PrototypeNet, RelationNet
+from src.model_rahul import PrototypeNet, RelationNet
 
 # miscellaneous
 import gc
@@ -29,7 +29,10 @@ parser.add_argument('--n_shot', default=5, type=int)
 parser.add_argument('--n_query', default=16, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--n_iter', default=40000, type=int)
+parser.add_argument('--test_iter', default=600, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
+parser.add_argument('--pretrain', default=True, type=bool)
+parser.add_argument('--resume_epoch', default=200, type=int)
 
 
 def model_summary():
@@ -43,6 +46,8 @@ def main(args):
     n_way = args.n_way
     n_shot = args.n_shot
     n_query = args.n_query
+    pretrain = args.pretrain
+    resume_epoch = args.resume_epoch
     
     dataset = MiniImageNet()
     
@@ -57,18 +62,11 @@ def main(args):
 
     # feature extractor
     init_lr = args.lr
-    model = RelationNet(n_way, n_shot, n_query, backbone='resnet',
-                        learning_rate=init_lr, is_training=is_training)
-    train_op, train_loss, train_acc, global_step = model.train(
-        support=support_a_reshape, query=query_b_reshape, regularized=True)
+    model = RelationNet(n_way, n_shot, n_query, gamma=init_lr, 
+                        backbone='resnet', is_training=is_training)
+    model.train_var(support_x=support_a_reshape, query_x=query_b_reshape, regularized=False)
     
     model_summary()
-
-    ## establish test graph
-    model_test = RelationNet(n_way, n_shot, n_query, backbone='resnet',
-                             learning_rate=init_lr, is_training=is_training)
-    test_loss, test_acc = model_test.test(
-        support=support_a_reshape, query=query_b_reshape, regularized=True)
 
     # saver for saving session
     saver = tf.train.Saver()
@@ -77,10 +75,16 @@ def main(args):
     
     checkpoint_file = log_path + "/checkpoint.ckpt"
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
+    
+    pretrain_path = 'logs/pretrain_baseline/pretrain_mini_sep_short_lr0.001_decay0.96/{}/'.format(
+        resume_epoch)
+    pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_path)
+
     init = [
         tf.global_variables_initializer(),
         tf.local_variables_initializer()
     ]
+
     def restore_from_checkpoint(sess, saver, checkpoint):
         if checkpoint:
             print("Restore session from checkpoint: {}".format(checkpoint))
@@ -88,6 +92,24 @@ def main(args):
             return True
         else:
             print("Checkpoint not found: {}".format(checkpoint))
+            return False
+
+    def restore_from_pretrain(sess, checkpoint):
+        if checkpoint:
+            print("Restore pretrained weights from checkpoint: {}".format(checkpoint))
+            var = tf.global_variables()
+            var_to_restore = [val for val in var if (('res10_weights' in val.name) or (
+                'bn' in val.name)) and ('meta_op' not in val.name) and ('M_' not in val.name)]
+
+            print("Pretrained weights:")
+            for _var in var_to_restore:
+                print(_var)
+
+            saver = tf.train.Saver(var_to_restore)
+            saver.restore(sess, checkpoint)
+            return True
+        else:
+            print("Pretrained checkpoint not found: {}".format(checkpoint))
             return False
 
     # load CUB data
@@ -103,12 +125,23 @@ def main(args):
         # store variables
         tf.summary.image("Support a image", support_a_reshape[:4], max_outputs=4)
         tf.summary.image("Query b image", query_b_reshape[:4], max_outputs=4)
-        tf.summary.scalar("Classification loss", train_loss)
-        tf.summary.scalar("Accuracy", train_acc)
+        tf.summary.scalar("Classification loss", model.x_loss)
+        tf.summary.scalar("Accuracy", model.x_acc)
         merged = tf.summary.merge_all()
         
         sess.run(init)
-        restore_from_checkpoint(sess, saver, lastest_checkpoint)
+        print("=== Start training...")
+        print("=== Ckeck last checkpoint...")
+        print(lastest_checkpoint)
+                
+        print("=== Ckeck pretrained model...")
+        print("=== pretrained model path: {}".format(pretrain_path))
+        print(pretrain_ckeckpoint)
+        if lastest_checkpoint:
+            restore_from_checkpoint(sess, saver, lastest_checkpoint)
+        elif pretrain:
+            restore_from_pretrain(sess, pretrain_ckeckpoint)
+        
         preprocess_time = 0
         train_time = 0
         for i_iter in range(args.n_iter):
@@ -122,7 +155,7 @@ def main(args):
 
             start = timeit.default_timer()
             # training                 
-            _, step = sess.run([train_op, global_step], feed_dict={
+            sess.run([model.train_op], feed_dict={
                 support_a: support,
                 query_b: query,
                 is_training: True
@@ -133,7 +166,7 @@ def main(args):
             
             # evaluation
             if i_iter % 50 == 0:
-                summary_train, loss, acc = sess.run([merged, test_loss, test_acc], feed_dict={
+                summary_train, loss, acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
                     is_training: False
@@ -141,52 +174,64 @@ def main(args):
 
                 # get task from validation
                 support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='val')
-                summary_val, val_loss, val_acc = sess.run([merged, test_loss, test_acc], feed_dict={
+                summary_val, val_loss, val_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
                     is_training: False
                 })
 
                 # get task from unseen domain (CUB)
-                cub_support, cub_query = cub.get_task(n_way, n_shot, n_query, aug=False)
-                summary_test, cub_loss, cub_acc = sess.run([merged, test_loss, test_acc], feed_dict={
+                cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query, aug=False)
+                summary_test, cub_loss, cub_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: cub_support,
                     query_b: cub_query,
                     is_training: False
                 })
 
                 # log all variables
-                file_writer_train.add_summary(summary_train, global_step=step)
-                file_writer_val.add_summary(summary_val, global_step=step)
-                file_writer_test.add_summary(summary_test, global_step=step)
+                file_writer_train.add_summary(summary_train, global_step=i_iter)
+                file_writer_val.add_summary(summary_val, global_step=i_iter)
+                file_writer_test.add_summary(summary_test, global_step=i_iter)
 
-                print('Iteration: %d, train cost: %g, train acc: %g' % (step, loss, acc))
+                print('Iteration: %d, train cost: %g, train acc: %g' % (i_iter+1, loss, acc))
                 print('eval cost: %g, eval acc: %g' % (val_loss, val_acc))
                 print('CUB cost: %g, CUB acc: %g' % (cub_loss, cub_acc))
                 print("==> Preporcess time: ", preprocess_time/(i_iter+1))
                 print("==> Train time: ", train_time/(i_iter+1))
 
             # save session every 2000 iteration
-            if step % 2000 == 0:    
-                saver.save(sess, checkpoint_file, global_step=step)
-                print('Save session at step %d' % step)
+            if (i_iter+1) % 2000 == 0:    
+                saver.save(sess, checkpoint_file, global_step=(i_iter+1))
+                print('Save session at step %d' % (i_iter+1))
 
-        # compute accuracy on 600 randomly generated task from CUB
-        acc = []
-        for _ in range(600):
-            cub_support, cub_query = cub.get_task(n_way, n_shot, n_query)
-            cub_acc = sess.run([test_acc], feed_dict={
+        # compute accuracy on 600 randomly generated task from mini-ImageNet and CUB
+        test_iter = args.test_iter
+        acc = np.empty((test_iter, 2))
+
+        for i in range(test_iter):
+            # get task from test
+            support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='test')
+            val_acc = sess.run([model.x_acc], feed_dict={
+                support_a: support,
+                query_b: query,
+                is_training: False
+            })
+
+            cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query)
+            cub_acc = sess.run([model.x_acc], feed_dict={
                 support_a: cub_support,
                 query_b: cub_query,
                 is_training: False
             })
-            acc.append(cub_acc)
-        acc = np.array(acc)
-
+            acc[i] = np.concatenate([val_acc, cub_acc])
+        
+        mean_acc = mean(acc, axis=0)
         confidence = 0.95
         std_err = sem(acc)
-        h = std_err * t.ppf((1 + confidence) / 2, 600 - 1)
-        print('Overall acc: {}+-{}%'.format(mean(acc), h))
+        h = std_err * t.ppf((1 + confidence) / 2, test_iter - 1)
+
+        print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
+        print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))
 
         file_writer_train.close()
         file_writer_val.close()
