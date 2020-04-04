@@ -15,11 +15,14 @@ import argparse
 
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
-from src.model_rahul import PrototypeNet, RelationNet
+from src.model import PrototypeNet, RelationNet
 
 # miscellaneous
 import gc
 
+# multi-thread
+import threading
+import queue
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--log_path', default='baseline', type=str)
@@ -34,6 +37,42 @@ parser.add_argument('--multi_domain', default=True, type=bool)
 parser.add_argument('--pretrain', default=True, type=bool)
 parser.add_argument('--resume_epoch', default=200, type=int)
 
+class Preprocessor(threading.Thread):
+    def __init__(self, id, mini_obj, mini_queue, n_way, n_shot, n_query):
+        # for thread
+        self.thread_id = id
+        self._stop_event = threading.Event()
+
+        # for obj
+        self.mini_obj = mini_obj
+        self.mini_queue = mini_queue
+
+        # for few-shot param.
+        self.n_way = n_way
+        self.n_shot = n_shot
+        self.n_query = n_query
+
+        threading.Thread.__init__(self)
+
+    def stop(self):
+        self._stop_event.set()
+
+    def is_stopped(self):
+        return self._stop_event.is_set()        
+
+    def run(self):
+        print("\n=== Process {} start!".format(self.thread_id))
+        print("n_way = {}".format(self.n_way))
+        print("n_shot = {}".format(self.n_shot))
+        print("n_query = {}".format(self.n_query))
+
+        while True:
+            # for mini
+            mini_sup, mini_qu = self.mini_obj.get_task(n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train', target='all')
+            self.mini_queue.put((mini_sup, mini_qu))
+
+            if self.is_stopped():
+                break
 
 def model_summary():
     model_vars = tf.trainable_variables()
@@ -114,7 +153,14 @@ def main(args):
 
     # load CUB data
     cub = Cub(mode='test')
-    
+
+    # make queue
+    mini_queue = queue.Queue(maxsize = 10)
+
+    # pass obj to preprocess thread and start
+    pre_thread = Preprocessor(0, dataset, mini_queue, n_way, n_shot, n_query)
+    pre_thread.start()
+
     ## training
     with tf.Session() as sess:
         # Creates a file writer for the log directory.
@@ -148,7 +194,8 @@ def main(args):
 
             start = timeit.default_timer()
             # get support and query
-            support, query = dataset.get_task(n_way, n_shot, n_query, mode='train')
+            #support, query = dataset.get_task(n_way, n_shot, n_query, mode='train')
+            support, query = mini_queue.get()
             stop = timeit.default_timer()
             
             preprocess_time += (stop - start) 
