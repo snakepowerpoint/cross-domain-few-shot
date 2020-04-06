@@ -27,9 +27,10 @@ parser.add_argument('--test_name', default='test', type=str)
 parser.add_argument('--n_way', default=5, type=int)
 parser.add_argument('--n_shot', default=5, type=int)
 parser.add_argument('--n_query', default=16, type=int)
+parser.add_argument('--n_query_test', default=15, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--n_iter', default=40000, type=int)
-parser.add_argument('--test_iter', default=600, type=int)
+parser.add_argument('--test_iter', default=1000, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
 parser.add_argument('--pretrain', default=True, type=bool)
 parser.add_argument('--resume_epoch', default=200, type=int)
@@ -46,6 +47,8 @@ def main(args):
     n_way = args.n_way
     n_shot = args.n_shot
     n_query = args.n_query
+    n_query_test = args.n_query_test
+
     pretrain = args.pretrain
     resume_epoch = args.resume_epoch
     
@@ -54,17 +57,22 @@ def main(args):
     ## establish training graph
     support_a = tf.placeholder(tf.float32, shape=[n_way, n_shot, None, None, 3])  
     query_b = tf.placeholder(tf.float32, shape=[n_way, n_query, None, None, 3])
+    query_b_test = tf.placeholder(tf.float32, shape=[n_way, n_query_test, None, None, 3])
     is_training = tf.placeholder(tf.bool)
 
     # reshape
     support_a_reshape = tf.reshape(support_a, [n_way * n_shot, img_h, img_w, 3])
     query_b_reshape = tf.reshape(query_b, [n_way * n_query, img_h, img_w, 3])
+    query_b_reshape_test = tf.reshape(query_b_test, [n_way * n_query_test, img_h, img_w, 3])
 
+    # reshape for inference
+    
     # feature extractor
     init_lr = args.lr
-    model = RelationNet(n_way, n_shot, n_query, gamma=init_lr, 
+    model = RelationNet(n_way, n_shot, n_query, n_query_test, gamma=init_lr, 
                         backbone='resnet', is_training=is_training)
     model.train_var(support_x=support_a_reshape, query_x=query_b_reshape, regularized=False)
+    model.test_var(support_x=support_a_reshape, query_x=query_b_reshape_test, regularized=False)
     
     model_summary()
 
@@ -123,11 +131,17 @@ def main(args):
         file_writer_test = tf.summary.FileWriter(os.path.join(log_path, "test"), sess.graph)
 
         # store variables
-        tf.summary.image("Support a image", support_a_reshape[:4], max_outputs=4)
-        tf.summary.image("Query b image", query_b_reshape[:4], max_outputs=4)
-        tf.summary.scalar("Classification loss", model.x_loss)
-        tf.summary.scalar("Accuracy", model.x_acc)
-        merged = tf.summary.merge_all()
+        s_imgs = tf.summary.image("Support a image", support_a_reshape[:4], max_outputs=4)
+        q_imgs = tf.summary.image("Query b image", query_b_reshape[:4], max_outputs=4)
+        q_test_imgs = tf.summary.image("Query b image", query_b_reshape_test[:4], max_outputs=4)
+
+        x_loss = tf.summary.scalar("Classification loss", model.x_loss)
+        x_acc = tf.summary.scalar("Accuracy", model.x_acc)
+        test_loss = tf.summary.scalar("Classification loss", model.test_loss)
+        test_acc = tf.summary.scalar("Accuracy", model.test_acc)
+        
+        merged_train = tf.summary.merge([s_imgs, q_imgs, x_loss, x_acc])
+        merged_test = tf.summary.merge([s_imgs, q_test_imgs, test_loss, test_acc])
         
         sess.run(init)
         print("=== Start training...")
@@ -166,7 +180,7 @@ def main(args):
             
             # evaluation
             if i_iter % 50 == 0:
-                summary_train, loss, acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
+                summary_train, loss, acc = sess.run([merged_train, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
                     is_training: False
@@ -174,17 +188,17 @@ def main(args):
 
                 # get task from validation
                 support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='val')
-                summary_val, val_loss, val_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
+                summary_val, val_loss, val_acc = sess.run([merged_train, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
                     is_training: False
                 })
 
                 # get task from unseen domain (CUB)
-                cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query, aug=False)
-                summary_test, cub_loss, cub_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
+                cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test, aug=False)
+                summary_test, cub_loss, cub_acc = sess.run([merged_test, model.test_loss, model.test_acc], feed_dict={
                     support_a: cub_support,
-                    query_b: cub_query,
+                    query_b_test: cub_query,
                     is_training: False
                 })
 
@@ -210,17 +224,17 @@ def main(args):
 
         for i in range(test_iter):
             # get task from test
-            support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='test')
-            val_acc = sess.run([model.x_acc], feed_dict={
+            support, query = dataset.get_task(n_way, n_shot, n_query_test, aug=False, mode='test')
+            val_acc = sess.run([model.test_acc], feed_dict={
                 support_a: support,
-                query_b: query,
+                query_b_test: query,
                 is_training: False
             })
 
-            cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query)
-            cub_acc = sess.run([model.x_acc], feed_dict={
+            cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test)
+            cub_acc = sess.run([model.test_acc], feed_dict={
                 support_a: cub_support,
-                query_b: cub_query,
+                query_b_test: cub_query,
                 is_training: False
             })
             acc[i] = np.concatenate([val_acc, cub_acc])
