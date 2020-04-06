@@ -121,6 +121,7 @@ class RelationNet(object):
                  n_way,
                  n_shot,
                  n_query,
+                 n_query_test=15,
                  alpha=1e-3,
                  beta=1.0,
                  gamma=5e-3,
@@ -130,6 +131,7 @@ class RelationNet(object):
         self.n_way = n_way
         self.n_shot = n_shot
         self.n_query = n_query
+        self.n_query_test = n_query_test
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -154,7 +156,7 @@ class RelationNet(object):
     def resnet10_encoder(self, inputs, is_training=True, reuse=False):
         with tf.variable_scope('encoder', reuse=reuse):
             # conv 1
-            net = convolution_layer(inputs, [7, 7, 64], [1, 2, 2, 1], bias=False, is_bn=True,
+            net = convolution_layer(inputs, [7, 7, 64], [1, 2, 2, 1], is_bias=False, is_bn=True,
                                     activat_fn=tf.nn.relu, name='conv_1', is_training=is_training)
             # net = tf.pad(net, paddings=[[0, 0], [1, 1], [1, 1], [0, 0]])
             net = max_pool(net, [1, 3, 3, 1], [1, 2, 2, 1], name='max_1', padding='SAME')
@@ -214,44 +216,56 @@ class RelationNet(object):
         with tf.variable_scope("res10_weights", reuse=tf.AUTO_REUSE):
             # conv1
             weights['conv1']    = tf.get_variable('conv1w', [7, 7, 3, 64],  initializer=conv_initializer, dtype=dtype)
-            weights['b1']       = tf.get_variable('conv1b', initializer=tf.zeros([64]))
+            # weights['b1']       = tf.get_variable('conv1b', initializer=tf.zeros([64]))
+            weights['b1']       = tf.zeros([64])
 
             # conv2 - residual_simple_block 
             weights['conv2_1']    = tf.get_variable('conv2w_1', [3, 3, 64, 64],  initializer=conv_initializer, dtype=dtype)
-            weights['b2_1']       = tf.get_variable('conv2b_1', initializer=tf.zeros([64]))        
+            # weights['b2_1']       = tf.get_variable('conv2b_1', initializer=tf.zeros([64]))
+            weights['b2_1']       = tf.zeros([64])
 
             weights['conv2_2']    = tf.get_variable('conv2w_2', [3, 3, 64, 64],  initializer=conv_initializer, dtype=dtype)
-            weights['b2_2']       = tf.get_variable('conv2b_2', initializer=tf.zeros([64]))             
+            # weights['b2_2']       = tf.get_variable('conv2b_2', initializer=tf.zeros([64]))             
+            weights['b2_2']       = tf.zeros([64])
 
             # conv3 - residual_simple_block 
             weights['conv3_1']    = tf.get_variable('conv3w_1', [3, 3, 64, 128],  initializer=conv_initializer, dtype=dtype)
-            weights['b3_1']       = tf.get_variable('conv3b_1', initializer=tf.zeros([128]))             
+            # weights['b3_1']       = tf.get_variable('conv3b_1', initializer=tf.zeros([128]))
+            weights['b3_1']       = tf.zeros([128])
 
             weights['conv3_2']    = tf.get_variable('conv3w_2', [3, 3, 128, 128],  initializer=conv_initializer, dtype=dtype)
-            weights['b3_2']       = tf.get_variable('conv3b_2', initializer=tf.zeros([128]))                         
+            # weights['b3_2']       = tf.get_variable('conv3b_2', initializer=tf.zeros([128]))
+            weights['b3_2']       = tf.zeros([128])
 
             weights['conv3_sc']    = tf.get_variable('conv3w_sc', [1, 1, 64, 128],  initializer=conv_initializer, dtype=dtype)
-            weights['b3_sc']       = tf.get_variable('conv3b_sc', initializer=tf.zeros([128]))                         
+            # weights['b3_sc']       = tf.get_variable('conv3b_sc', initializer=tf.zeros([128]))
+            weights['b3_sc']       = tf.zeros([128])
 
             # conv4 - residual_simple_block 
             weights['conv4_1']    = tf.get_variable('conv4w_1', [3, 3, 128, 256],  initializer=conv_initializer, dtype=dtype)
-            weights['b4_1']       = tf.get_variable('conv4b_1', initializer=tf.zeros([256]))             
+            # weights['b4_1']       = tf.get_variable('conv4b_1', initializer=tf.zeros([256]))
+            weights['b4_1']       = tf.zeros([256])
 
             weights['conv4_2']    = tf.get_variable('conv4w_2', [3, 3, 256, 256],  initializer=conv_initializer, dtype=dtype)
-            weights['b4_2']       = tf.get_variable('conv4b_2', initializer=tf.zeros([256]))                         
+            # weights['b4_2']       = tf.get_variable('conv4b_2', initializer=tf.zeros([256]))
+            weights['b4_2']       = tf.zeros([256])
 
             weights['conv4_sc']    = tf.get_variable('conv4w_sc', [1, 1, 128, 256],  initializer=conv_initializer, dtype=dtype)
-            weights['b4_sc']       = tf.get_variable('conv4b_sc', initializer=tf.zeros([256]))           
+            # weights['b4_sc']       = tf.get_variable('conv4b_sc', initializer=tf.zeros([256]))
+            weights['b4_sc']       = tf.zeros([256])
 
             # conv5 - residual_simple_block 
             weights['conv5_1']    = tf.get_variable('conv5w_1', [3, 3, 256, 512],  initializer=conv_initializer, dtype=dtype)
-            weights['b5_1']       = tf.get_variable('conv5b_1', initializer=tf.zeros([512]))             
+            # weights['b5_1']       = tf.get_variable('conv5b_1', initializer=tf.zeros([512]))
+            weights['b5_1']       = tf.zeros([512])
 
             weights['conv5_2']    = tf.get_variable('conv5w_2', [3, 3, 512, 512],  initializer=conv_initializer, dtype=dtype)
-            weights['b5_2']       = tf.get_variable('conv5b_2', initializer=tf.zeros([512]))                         
+            # weights['b5_2']       = tf.get_variable('conv5b_2', initializer=tf.zeros([512]))
+            weights['b5_2']       = tf.zeros([512])
 
             weights['conv5_sc']    = tf.get_variable('conv5w_sc', [1, 1, 256, 512],  initializer=conv_initializer, dtype=dtype)
-            weights['b5_sc']       = tf.get_variable('conv5b_sc', initializer=tf.zeros([512]))           
+            # weights['b5_sc']       = tf.get_variable('conv5b_sc', initializer=tf.zeros([512]))
+            weights['b5_sc']       = tf.zeros([512])
 
             return weights        
 
@@ -376,7 +390,52 @@ class RelationNet(object):
         
         return self.train_op, self.train_loss, self.train_acc, global_step
 
-    def train_meta(self, support_x, query_x, support_a, query_b, regularized=False):
+    def train_var(self, support_x, query_x, regularized=False):
+        
+        ### build model
+        # create network variables
+        self.res10_weights = res10_weights = self.resnet10_encoder_weights()
+        self.relation_weights = relation_weights = self.relation_module_weights()
+
+        # create labels
+        labels = np.repeat(np.arange(self.n_way), repeats=self.n_query).astype(np.uint8)  # [75, 1]
+        one_hot_labels = tf.one_hot(labels, depth=self.n_way)  # [75, 5]
+
+        # build res10 network - for support & query x =================================================================================      
+        support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
+
+        h, w, c = support_x_encode.get_shape().as_list()[1:]
+        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [self.n_query * self.n_way, 1, 1, 1, 1]) 
+
+        query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
+        
+        query_x_encode = tf.tile(tf.expand_dims(query_x_encode, axis=0), [self.n_way, 1, 1, 1, 1])
+        query_x_encode = tf.transpose(query_x_encode, perm=[1, 0, 2, 3, 4])
+
+        relation_x_pairs = tf.concat([support_x_encode, query_x_encode], -1)
+        relation_x_pairs = tf.reshape(relation_x_pairs, shape=[-1, h, w, c*2])
+
+        # build relation network - for support & query x 
+        relations_x = self.relation_module_meta(relation_x_pairs, relation_weights, is_training=self.is_training)  # [75*5, 1]
+        relations_x = tf.reshape(relations_x, [-1, self.n_way])  # [75, 5]
+        
+        # x loss & acc
+        self.x_loss = self.ce_loss(y_pred=relations_x, y_true=one_hot_labels)
+        self.x_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations_x, axis=-1), labels)))
+
+        # l2 reg
+        if regularized:
+            train_vars = tf.trainable_variables()
+            l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'conv' in v.name]) * 1e-8
+            self.x_loss = tf.add(self.x_loss, l2_loss)
+
+        # optimizer
+        global_step = tf.Variable(0, trainable=False, name='global_step')
+        self.train_op = tf.train.AdamOptimizer(
+            self.gamma, name="train_op").minimize(self.x_loss, global_step=global_step)
+
+    def train_meta(self, support_x, query_x, support_a, query_b, first_lr, regularized=False):
         
         ### build model
         # create network variables
@@ -426,9 +485,9 @@ class RelationNet(object):
 
         # theta_pi = theta - alpha * grads
         fast_res10_weights =    dict(zip(res10_weights.keys(),        
-                                        [res10_weights[key] - self.alpha * res10_gvs[key] for key in res10_weights.keys()]))
+                                        [res10_weights[key] - first_lr * res10_gvs[key] for key in res10_weights.keys()]))
         fast_relation_weights = dict(zip(relation_weights.keys(),        
-                                        [relation_weights[key] - self.alpha * relation_gvs[key] for key in relation_weights.keys()]))
+                                        [relation_weights[key] - first_lr * relation_gvs[key] for key in relation_weights.keys()]))
 
         # use theta_pi to forward meta-test - for support a & query b =================================================================
         support_a_encode = self.resnet10_encoder_meta(support_a, fast_res10_weights, is_training=self.is_training)
@@ -464,13 +523,14 @@ class RelationNet(object):
         #gvs = optimizer.compute_gradients(self.ab_loss)
         #self.meta_op = optimizer.apply_gradients(gvs)
         self.total_loss = tf.add(self.x_loss, self.beta * self.ab_loss)
+        
         global_step = tf.Variable(0, trainable=False, name='global_step')
         if self.decay is not None:
             self.gamma = tf.train.exponential_decay(self.gamma, global_step, 15000, self.decay, staircase=True)
-        self.meta_op = tf.train.GradientDescentOptimizer(
+        self.meta_op = tf.train.AdamOptimizer(
             self.gamma, name="meta_opt").minimize(self.total_loss, global_step=global_step)
 
-    def train_baseline(self, inputs, labels, learning_rate, batch_size=64, regularized=False):
+    def train_baseline(self, inputs, labels, learning_rate, batch_size=16, regularized=False):
         
         ### build model
         # create network variables
@@ -478,9 +538,10 @@ class RelationNet(object):
 
         # build res10 network - for support & query x =================================================================================      
         encode = self.resnet10_encoder_meta(inputs, res10_weights, is_training=self.is_training)
-        #h, w, c = encode.get_shape().as_list()[1:]
-        encode = tf.reduce_sum(encode, axis=[1,2])
-        pred = self.resnet10_classifier(encode)
+        # h, w, c = encode.get_shape().as_list()[1:]
+        # print([h, w])
+        avgpool = tf.nn.avg_pool(encode, ksize=[1, 7, 7, 1], strides=[1, 1, 1, 1], padding='VALID')
+        pred = self.resnet10_classifier(avgpool)
 
         # x loss & acc
         self.loss = self.ce_loss(y_pred=pred, y_true=labels)
@@ -488,9 +549,6 @@ class RelationNet(object):
 
         # optimizer
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        if self.decay is not None:
-            self.gamma = tf.train.exponential_decay(self.gamma, global_step, 15000, self.decay, staircase=True)
-
         self.train_op = tf.train.AdamOptimizer(
             learning_rate, name="train_op").minimize(self.loss, global_step=global_step)
 
@@ -531,3 +589,83 @@ class RelationNet(object):
             self.test_loss = tf.add(self.test_loss, l2_loss)
         
         return self.test_loss, self.test_acc
+
+    def test_var(self, support_x, query_x, regularized=False):
+        
+        ### build model
+        # create network variables
+        self.res10_weights = res10_weights = self.resnet10_encoder_weights()
+        self.relation_weights = relation_weights = self.relation_module_weights()
+
+        # create labels
+        labels = np.repeat(np.arange(self.n_way), repeats=self.n_query_test).astype(np.uint8)  # [75, 1]
+        one_hot_labels = tf.one_hot(labels, depth=self.n_way)  # [75, 5]
+
+        # build res10 network - for support & query x =================================================================================      
+        support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
+
+        h, w, c = support_x_encode.get_shape().as_list()[1:]
+        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [self.n_query_test * self.n_way, 1, 1, 1, 1]) 
+
+        query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
+        
+        query_x_encode = tf.tile(tf.expand_dims(query_x_encode, axis=0), [self.n_way, 1, 1, 1, 1])
+        query_x_encode = tf.transpose(query_x_encode, perm=[1, 0, 2, 3, 4])
+
+        relation_x_pairs = tf.concat([support_x_encode, query_x_encode], -1)
+        relation_x_pairs = tf.reshape(relation_x_pairs, shape=[-1, h, w, c*2])
+
+        # build relation network - for support & query x 
+        relations_x = self.relation_module_meta(relation_x_pairs, relation_weights, is_training=self.is_training)  # [75*5, 1]
+        relations_x = tf.reshape(relations_x, [-1, self.n_way])  # [75, 5]
+        
+        # x loss & acc
+        self.test_loss = self.ce_loss(y_pred=relations_x, y_true=one_hot_labels)
+        self.test_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations_x, axis=-1), labels)))
+
+        # l2 reg
+        if regularized:
+            train_vars = tf.trainable_variables()
+            l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'conv' in v.name]) * 1e-8
+            self.test_loss = tf.add(self.test_loss, l2_loss)
+
+    def test_meta(self, support_x, query_x, regularized=False):
+        
+        ### build model
+        # create network variables
+        self.res10_weights = res10_weights = self.resnet10_encoder_weights()
+        self.relation_weights = relation_weights = self.relation_module_weights()
+
+        # create labels
+        labels = np.repeat(np.arange(self.n_way), repeats=self.n_query_test).astype(np.uint8)  # [75, 1]
+        one_hot_labels = tf.one_hot(labels, depth=self.n_way)  # [75, 5]
+
+        # build res10 network - for support & query x =================================================================================      
+        support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
+
+        h, w, c = support_x_encode.get_shape().as_list()[1:]
+        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [self.n_query_test * self.n_way, 1, 1, 1, 1]) 
+
+        query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
+        
+        query_x_encode = tf.tile(tf.expand_dims(query_x_encode, axis=0), [self.n_way, 1, 1, 1, 1])
+        query_x_encode = tf.transpose(query_x_encode, perm=[1, 0, 2, 3, 4])
+
+        relation_x_pairs = tf.concat([support_x_encode, query_x_encode], -1)
+        relation_x_pairs = tf.reshape(relation_x_pairs, shape=[-1, h, w, c*2])
+
+        # build relation network - for support & query x 
+        relations_x = self.relation_module_meta(relation_x_pairs, relation_weights, is_training=self.is_training)  # [75*5, 1]
+        relations_x = tf.reshape(relations_x, [-1, self.n_way])  # [75, 5]
+        
+        # x loss & acc
+        self.test_loss = self.ce_loss(y_pred=relations_x, y_true=one_hot_labels)
+        self.test_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations_x, axis=-1), labels)))
+
+        # l2 reg
+        if regularized:
+            train_vars = tf.trainable_variables()
+            l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'conv' in v.name]) * 1e-8
+            self.test_loss = tf.add(self.test_loss, l2_loss)
