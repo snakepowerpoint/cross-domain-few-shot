@@ -248,35 +248,46 @@ class MiniImageNet(object):
 
         return support, query
     
-    def get_batch(self, batch_size=64, size=(224, 224), aug=True, mode='train'):
+    def batch_generator(self, label_dim=64, batch_size=64, size=(224, 224), aug=True, mode='train'):
         if batch_size % 64 != 0:
             print(">>> batch_size = {} should be divisible by 64.".format(batch_size))
             return None, None
         
-        img_batch = np.empty((batch_size, 84, 84, 3), dtype=np.uint8)
-        img_label = np.empty((batch_size, 64), dtype=np.uint8)
+        curr_batch = np.empty((batch_size, 84, 84, 3), dtype=np.uint8)
+        curr_label = np.empty((batch_size, label_dim), dtype=np.uint8)
         img_count = 0
-        for category in list(self.data_dict['train']['class_dict'].keys()):     
-            # wei, "train" and "val" contrain different classes, and here, we only use images from "train" data to do the validation.
-            # Hence, the mode is "val" though, we still get the data from "train".
-            if mode == 'train':      
-                selected_imgs = random.sample(self.data_dict[mode]['class_dict'][category][:500], k=(batch_size//64))            
-            elif mode == 'val':   
-                selected_imgs = random.sample(self.data_dict['train']['class_dict'][category][501:], k=(batch_size//64))            
-            
-            # wei, get the label of the current class from the dict.
-            curr_label = np.zeros((1, 64))
-            curr_label[0, self.label_dict[category]] = 1
+        epoch = 0
 
-            for j in selected_imgs:
-                s_img = self.data_dict['train']['image_data'][j]
-                img_batch[img_count] = s_img
-                img_label[img_count] = curr_label
+        all_categories = list(self.data_dict['train']['class_dict'].keys())
+        shuffled_idx = list(range(600*len(all_categories)))
+        random.shuffle(shuffled_idx)
+
+        while True:
+         
+            for idx in shuffled_idx:     
+                category = all_categories[idx // 600]
+                img_idx = idx % 600
+                if mode == 'train':      
+                    selected_img_tag = self.data_dict[mode]['class_dict'][category][img_idx]
+                
+                label = np.zeros((1, label_dim))
+                label[0, self.label_dict[category]] = 1
+
+                s_img = self.data_dict['train']['image_data'][selected_img_tag]
+                curr_batch[img_count] = s_img
+                curr_label[img_count] = label
                 img_count += 1
-            
-        img_batch = resize_batch_img(img_batch, size=size, aug=aug)
 
-        return img_batch, img_label
+                if img_count % batch_size == 0 and img_count != 0:        
+                    img_batch = resize_batch_img(curr_batch, size=size, aug=aug)
+                    img_count = 0
+
+                    yield img_batch, curr_label
+        
+            img_count = 0
+            epoch += 1
+            print(">>> epoch: {}".format(epoch))
+            random.shuffle(shuffled_idx)
 
 def resize_batch_img(imgs, size, aug):       
     resized_img = np.empty((imgs.shape[0], size[0], size[1], 3))

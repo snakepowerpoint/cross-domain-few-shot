@@ -15,7 +15,7 @@ import argparse
 
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
-from src.model_local import PrototypeNet, RelationNet ### use model_local.py
+from src.model import PrototypeNet, RelationNet ### use model_local.py
 
 # miscellaneous
 import gc
@@ -28,6 +28,7 @@ parser.add_argument('--batch_size', default=64, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--decay', default=0.96, type=float)
 parser.add_argument('--n_iter', default=40000, type=int)
+parser.add_argument('--num_class', default=200, type=int)
 
 def model_summary():
     model_vars = tf.trainable_variables()
@@ -40,11 +41,12 @@ def main(args):
     lr = args.lr
     decay = args.decay
     batch_size = args.batch_size
+    num_class = args.num_class
        
     ## establish training graph
     # inputs placeholder (support and query randomly sampled from two domain)
-    inputs = tf.placeholder(tf.float32, shape=[batch_size, None, None, 3])  
-    labels = tf.placeholder(tf.int64, shape=[batch_size, 64])
+    inputs = tf.placeholder(tf.float32, shape=[batch_size, img_w, img_h, 3])  
+    labels = tf.placeholder(tf.int64, shape=[batch_size, num_class])
     learning_rate = tf.placeholder(tf.float32)  
     is_training = tf.placeholder(tf.bool)
 
@@ -54,7 +56,7 @@ def main(args):
     print("Decay second learning rate: ", decay)
     model = RelationNet(0, 0, 0, alpha=0, gamma=lr, decay=decay,
                         backbone='resnet', is_training=is_training)
-    model.train_baseline(inputs=inputs, labels=labels, learning_rate=learning_rate, batch_size=batch_size)
+    model.train_baseline(inputs=inputs, labels=labels, label_dim=num_class, learning_rate=learning_rate, batch_size=batch_size)
 
     model_summary()
 
@@ -97,15 +99,16 @@ def main(args):
         tf.summary.scalar("acc", model.acc, collections=['train', 'test'])
         
         train_merged = tf.summary.merge_all('train')
-        test_merged = tf.summary.merge_all('test')
+        #test_merged = tf.summary.merge_all('test')
         
         print("=== Start training...")
         sess.run(init)
         restore_from_checkpoint(sess, saver, lastest_checkpoint)
+        mini_datagen = mini.batch_generator(label_dim=num_class)
         for i_iter in range(args.n_iter):
 
             # mini-imagenet ======================================================================
-            curr_inputs, curr_labels = mini.get_batch()
+            curr_inputs, curr_labels = next(mini_datagen)
 
             # learning rate decay
             if i_iter == 40000:
@@ -130,7 +133,7 @@ def main(args):
                             learning_rate: lr,
                             is_training: False
                         })
-
+                """
                 # get task from val
                 val_inputs, val_labels = mini.get_batch(mode='val', aug=False)
                 summary_test, test_loss, test_acc = \
@@ -141,13 +144,13 @@ def main(args):
                             learning_rate: lr,
                             is_training: False
                         })
-
+                """
                 # log all variables
                 file_writer_train.add_summary(summary_train, global_step=i_iter)
-                file_writer_test.add_summary(summary_test, global_step=i_iter)
+                #file_writer_test.add_summary(summary_test, global_step=i_iter)
 
                 print('Iteration: %d, Train [%f, %f]' % (i_iter+1, train_loss, train_acc))
-                print('==> Test: [%f, %f]' % (test_loss, test_acc))
+                #print('==> Test: [%f, %f]' % (test_loss, test_acc))
 
             # save session every 2000 iteration
             if (i_iter+1) % 2000 == 0:    
