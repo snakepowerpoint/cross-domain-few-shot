@@ -15,8 +15,6 @@ import argparse
 
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
-from src.model_rahul import PrototypeNet, RelationNet
-
 # miscellaneous
 import gc
 
@@ -24,6 +22,7 @@ import gc
 import threading
 import queue
 
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--log_path', default='baseline', type=str)
@@ -34,10 +33,11 @@ parser.add_argument('--n_query', default=16, type=int)
 parser.add_argument('--n_query_test', default=15, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--n_iter', default=40000, type=int)
-parser.add_argument('--test_iter', default=1000, type=int)
+parser.add_argument('--test_iter', default=200, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
 parser.add_argument('--pretrain', default=True, type=bool)
-parser.add_argument('--resume_epoch', default=200, type=int)
+parser.add_argument('--fine_tune', default=False, type=bool)
+parser.add_argument('--resume_epoch', default=0, type=int)
 
 
 class Preprocessor(threading.Thread):
@@ -93,7 +93,8 @@ def main(args):
 
     pretrain = args.pretrain
     resume_epoch = args.resume_epoch
-    
+    fine_tune = args.fine_tune
+
     dataset = MiniImageNet()
     
     ## establish training graph
@@ -127,8 +128,10 @@ def main(args):
     checkpoint_file = log_path + "/checkpoint.ckpt"
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
     
-    pretrain_log_path = 'logs/pretrain_baseline/pretrain_baseline_batch_en64_lr0.001_decay0.96/'
+    pretrain_log_path = os.path.join('logs', 'pretrain_baseline', 'pretrain_baseline_batch_en200_lr0.001_decay0.96') 
     pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_log_path)
+
+    best_checkpoint_path = os.path.join(log_path, 'best_performance')
 
     init = [
         tf.global_variables_initializer(),
@@ -148,8 +151,7 @@ def main(args):
         if checkpoint:
             print("Restore pretrained weights from checkpoint: {}".format(checkpoint))
             var = tf.global_variables()
-            var_to_restore = [val for val in var if (('res10_weights' in val.name) or (
-                'bn' in val.name)) and ('meta_op' not in val.name) and ('M_' not in val.name)]
+            var_to_restore = [val for val in var if (('res10_weights' in val.name) or ('bn' in val.name)) and ('meta_op' not in val.name) and ('M_' not in val.name)]
 
             print("Pretrained weights:")
             for _var in var_to_restore:
@@ -189,20 +191,19 @@ def main(args):
         
         sess.run(init)
         print("=== Start training...")
-        print("=== Ckeck last checkpoint...")
-        print(lastest_checkpoint)
                 
-        print("=== Ckeck pretrained model...")
-        print("=== pretrained model path: {}".format(pretrain_log_path))
-        print(pretrain_ckeckpoint)
         if lastest_checkpoint:
             restore_from_checkpoint(sess, saver, lastest_checkpoint)
         elif pretrain:
+            print("=== Ckeck pretrained model...")
+            print("=== pretrained model path: {}".format(pretrain_log_path))
+            print(pretrain_ckeckpoint)            
             restore_from_pretrain(sess, pretrain_ckeckpoint)
         
         preprocess_time = 0
         train_time = 0
-        for i_iter in range(args.n_iter):
+        best_cub_acc = 0
+        for i_iter in range(resume_epoch, args.n_iter):
 
             start = timeit.default_timer()
             # get support and query
@@ -266,43 +267,50 @@ def main(args):
                 print("==> Preporcess time: ", preprocess_time/(i_iter+1))
                 print("==> Train time: ", train_time/(i_iter+1))
 
+                if fine_tune == True:
+                    # compute accuracy on 600 randomly generated task from mini-ImageNet and CUB
+                    test_iter = args.test_iter
+                    acc = np.empty((test_iter, 2))
+                    
+                    iter_pbar = tqdm(range(test_iter))
+                    for i in iter_pbar:
+                        # get task from test
+                        support, query = dataset.get_task(n_way, n_shot, n_query_test, aug=False, mode='test')
+                        val_acc = sess.run([model.test_acc], feed_dict={
+                            support_a: support,
+                            query_b_test: query,
+                            is_training: False
+                        })
+
+                        cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test)
+                        cub_acc = sess.run([model.test_acc], feed_dict={
+                            support_a: cub_support,
+                            query_b_test: cub_query,
+                            is_training: False
+                        })
+                        acc[i] = np.concatenate([val_acc, cub_acc])
+                    
+                    mean_acc = mean(acc, axis=0)
+                    confidence = 0.95
+                    std_err = sem(acc)
+                    h = std_err * t.ppf((1 + confidence) / 2, test_iter - 1)
+                        
+                    print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
+                    print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))                
+
+                    if mean_acc[1] >= best_cub_acc:
+                        best_cub_acc = mean_acc[1]
+                        ckpt_name = "CUB_acc" + str(best_cub_acc) + "_h" + str(h[1]) + "_Mini_acc" + str(mean_acc[0]) + "_h" + str(h[0]) + ".ckpt" 
+                        saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
+                        print("=== New record! ===")
+            
             # save session every 2000 iteration
             if (i_iter+1) % 2000 == 0:    
                 saver.save(sess, checkpoint_file, global_step=(i_iter+1))
                 print('Save session at step %d' % (i_iter+1))
-
-            if ((i_iter+1) > 6000) and (i_iter % 50 == 0):
-                # compute accuracy on several randomly generated task from mini-ImageNet and CUB
-                acc = np.empty((test_iter, 2))
-
-                for i in range(test_iter):
-                    # get task from test
-                    support, query = dataset.get_task(n_way, n_shot, n_query_test, aug=False, mode='test')
-                    val_acc = sess.run([model.x_acc], feed_dict={
-                        support_a: support,
-                        query_b: query,
-                        labels_input: test_labels,
-                        n_query_input: n_query_test,
-                        is_training: False
-                    })
-
-                    cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test)
-                    cub_acc = sess.run([model.x_acc], feed_dict={
-                        support_a: cub_support,
-                        query_b: cub_query,
-                        labels_input: test_labels,
-                        n_query_input: n_query_test,
-                        is_training: False
-                    })
-                    acc[i] = np.concatenate([val_acc, cub_acc])
-                
-                mean_acc = mean(acc, axis=0)
-                confidence = 0.95
-                std_err = sem(acc)
-                h = std_err * t.ppf((1 + confidence) / 2, test_iter - 1)
-
-                print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
-                print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))
+        
+        pre_thread.stop()
+        pre_thread.join()
 
         file_writer_train.close()
         file_writer_val.close()
