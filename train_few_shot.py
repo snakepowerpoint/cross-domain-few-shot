@@ -15,7 +15,7 @@ import argparse
 
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
-from src.model import PrototypeNet, RelationNet
+from src.model_rahul import PrototypeNet, RelationNet
 
 # miscellaneous
 import gc
@@ -23,6 +23,7 @@ import gc
 # multi-thread
 import threading
 import queue
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--log_path', default='baseline', type=str)
@@ -37,6 +38,7 @@ parser.add_argument('--test_iter', default=1000, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
 parser.add_argument('--pretrain', default=True, type=bool)
 parser.add_argument('--resume_epoch', default=200, type=int)
+
 
 class Preprocessor(threading.Thread):
     def __init__(self, id, mini_obj, mini_queue, n_way, n_shot, n_query):
@@ -87,6 +89,7 @@ def main(args):
     n_shot = args.n_shot
     n_query = args.n_query
     n_query_test = args.n_query_test
+    test_iter = args.test_iter
 
     pretrain = args.pretrain
     resume_epoch = args.resume_epoch
@@ -95,23 +98,24 @@ def main(args):
     
     ## establish training graph
     support_a = tf.placeholder(tf.float32, shape=[n_way, n_shot, None, None, 3])  
-    query_b = tf.placeholder(tf.float32, shape=[n_way, n_query, None, None, 3])
-    query_b_test = tf.placeholder(tf.float32, shape=[n_way, n_query_test, None, None, 3])
+    query_b = tf.placeholder(tf.float32, shape=[n_way, None, None, None, 3])
+    labels_input = tf.placeholder(tf.int64, shape=[None])
+    n_query_input = tf.placeholder_with_default(n_query, shape=None)
     is_training = tf.placeholder(tf.bool)
 
     # reshape
     support_a_reshape = tf.reshape(support_a, [n_way * n_shot, img_h, img_w, 3])
-    query_b_reshape = tf.reshape(query_b, [n_way * n_query, img_h, img_w, 3])
-    query_b_reshape_test = tf.reshape(query_b_test, [n_way * n_query_test, img_h, img_w, 3])
-
-    # reshape for inference
+    query_b_reshape = tf.reshape(query_b, [n_way * n_query_input, img_h, img_w, 3])
     
     # feature extractor
     init_lr = args.lr
+    train_labels = np.repeat(np.arange(n_way), repeats=n_query).astype(np.uint8)
+    test_labels = np.repeat(np.arange(n_way), repeats=n_query_test).astype(np.uint8)
+
     model = RelationNet(n_way, n_shot, n_query, n_query_test, gamma=init_lr, 
                         backbone='resnet', is_training=is_training)
-    model.train_var(support_x=support_a_reshape, query_x=query_b_reshape, regularized=False)
-    model.test_var(support_x=support_a_reshape, query_x=query_b_reshape_test, regularized=False)
+    model.build(n_way, n_shot, n_query=n_query_input, support_x=support_a_reshape, 
+                query_x=query_b_reshape, labels=labels_input, regularized=False)
     
     model_summary()
 
@@ -123,7 +127,7 @@ def main(args):
     checkpoint_file = log_path + "/checkpoint.ckpt"
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
     
-    pretrain_log_path = os.path.join('logs', 'pretrain_baseline', 'pretrain_baseline_batch_en64_lr0.001_decay0.96') 
+    pretrain_log_path = 'logs/pretrain_baseline/pretrain_baseline_batch_en64_lr0.001_decay0.96/'
     pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_log_path)
 
     init = [
@@ -161,12 +165,12 @@ def main(args):
     # load CUB data
     cub = Cub(mode='test')
 
-    # make queue
-    mini_queue = queue.Queue(maxsize = 10)
+    # # make queue
+    # mini_queue = queue.Queue(maxsize = 10)
 
-    # pass obj to preprocess thread and start
-    pre_thread = Preprocessor(0, dataset, mini_queue, n_way, n_shot, n_query)
-    pre_thread.start()
+    # # pass obj to preprocess thread and start
+    # pre_thread = Preprocessor(0, dataset, mini_queue, n_way, n_shot, n_query)
+    # pre_thread.start()
 
     ## training
     with tf.Session() as sess:
@@ -177,16 +181,11 @@ def main(args):
 
         # store variables
         s_imgs = tf.summary.image("Support a image", support_a_reshape[:4], max_outputs=4)
-        q_imgs = tf.summary.image("Query b image", query_b_reshape[:4], max_outputs=4)
-        q_test_imgs = tf.summary.image("Query b image", query_b_reshape_test[:4], max_outputs=4)
-
+        q_imgs = tf.summary.image("Query b image", query_b_reshape[:4], max_outputs=4) 
         x_loss = tf.summary.scalar("Classification loss", model.x_loss)
         x_acc = tf.summary.scalar("Accuracy", model.x_acc)
-        test_loss = tf.summary.scalar("Classification loss", model.test_loss)
-        test_acc = tf.summary.scalar("Accuracy", model.test_acc)
         
-        merged_train = tf.summary.merge([s_imgs, q_imgs, x_loss, x_acc])
-        merged_test = tf.summary.merge([s_imgs, q_test_imgs, test_loss, test_acc])
+        merged = tf.summary.merge([s_imgs, q_imgs, x_loss, x_acc])
         
         sess.run(init)
         print("=== Start training...")
@@ -207,8 +206,8 @@ def main(args):
 
             start = timeit.default_timer()
             # get support and query
-            #support, query = dataset.get_task(n_way, n_shot, n_query, mode='train')
-            support, query = mini_queue.get()
+            support, query = dataset.get_task(n_way, n_shot, n_query, mode='train')
+            # support, query = mini_queue.get()
             stop = timeit.default_timer()
             
             preprocess_time += (stop - start) 
@@ -218,6 +217,8 @@ def main(args):
             sess.run([model.train_op], feed_dict={
                 support_a: support,
                 query_b: query,
+                labels_input: train_labels,
+                n_query_input: n_query,
                 is_training: True
             })
             stop = timeit.default_timer()
@@ -226,25 +227,31 @@ def main(args):
             
             # evaluation
             if i_iter % 50 == 0:
-                summary_train, loss, acc = sess.run([merged_train, model.x_loss, model.x_acc], feed_dict={
+                summary_train, loss, acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
+                    labels_input: train_labels, 
+                    n_query_input: n_query,
                     is_training: False
                 })
 
                 # get task from validation
                 support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='val')
-                summary_val, val_loss, val_acc = sess.run([merged_train, model.x_loss, model.x_acc], feed_dict={
+                summary_val, val_loss, val_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
+                    labels_input: train_labels, 
+                    n_query_input: n_query,
                     is_training: False
                 })
 
                 # get task from unseen domain (CUB)
                 cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test, aug=False)
-                summary_test, cub_loss, cub_acc = sess.run([merged_test, model.test_loss, model.test_acc], feed_dict={
+                summary_test, cub_loss, cub_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: cub_support,
-                    query_b_test: cub_query,
+                    query_b: cub_query,
+                    labels_input: test_labels,
+                    n_query_input: n_query_test,
                     is_training: False
                 })
 
@@ -264,34 +271,38 @@ def main(args):
                 saver.save(sess, checkpoint_file, global_step=(i_iter+1))
                 print('Save session at step %d' % (i_iter+1))
 
-        # compute accuracy on 600 randomly generated task from mini-ImageNet and CUB
-        test_iter = args.test_iter
-        acc = np.empty((test_iter, 2))
+            if ((i_iter+1) > 6000) and (i_iter % 50 == 0):
+                # compute accuracy on several randomly generated task from mini-ImageNet and CUB
+                acc = np.empty((test_iter, 2))
 
-        for i in range(test_iter):
-            # get task from test
-            support, query = dataset.get_task(n_way, n_shot, n_query_test, aug=False, mode='test')
-            val_acc = sess.run([model.test_acc], feed_dict={
-                support_a: support,
-                query_b_test: query,
-                is_training: False
-            })
+                for i in range(test_iter):
+                    # get task from test
+                    support, query = dataset.get_task(n_way, n_shot, n_query_test, aug=False, mode='test')
+                    val_acc = sess.run([model.x_acc], feed_dict={
+                        support_a: support,
+                        query_b: query,
+                        labels_input: test_labels,
+                        n_query_input: n_query_test,
+                        is_training: False
+                    })
 
-            cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test)
-            cub_acc = sess.run([model.test_acc], feed_dict={
-                support_a: cub_support,
-                query_b_test: cub_query,
-                is_training: False
-            })
-            acc[i] = np.concatenate([val_acc, cub_acc])
-        
-        mean_acc = mean(acc, axis=0)
-        confidence = 0.95
-        std_err = sem(acc)
-        h = std_err * t.ppf((1 + confidence) / 2, test_iter - 1)
+                    cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test)
+                    cub_acc = sess.run([model.x_acc], feed_dict={
+                        support_a: cub_support,
+                        query_b: cub_query,
+                        labels_input: test_labels,
+                        n_query_input: n_query_test,
+                        is_training: False
+                    })
+                    acc[i] = np.concatenate([val_acc, cub_acc])
+                
+                mean_acc = mean(acc, axis=0)
+                confidence = 0.95
+                std_err = sem(acc)
+                h = std_err * t.ppf((1 + confidence) / 2, test_iter - 1)
 
-        print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
-        print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))
+                print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
+                print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))
 
         file_writer_train.close()
         file_writer_val.close()
