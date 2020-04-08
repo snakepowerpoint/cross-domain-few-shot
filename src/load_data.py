@@ -199,7 +199,7 @@ class MiniImageNet(object):
     def _label_mapping(self):
         # make label mapping list 
         label_dict = dict()
-        category_list = list(self.data_dict['train']['class_dict'].keys())
+        category_list = sorted(list(self.data_dict['train']['class_dict'].keys()))
         for i, category in enumerate(category_list):
             label_dict[category] = i
 
@@ -258,7 +258,7 @@ class MiniImageNet(object):
         img_count = 0
         epoch = 0
 
-        all_categories = list(self.data_dict['train']['class_dict'].keys())
+        all_categories = sorted(list(self.data_dict['train']['class_dict'].keys()))
         shuffled_idx = list(range(600*len(all_categories)))
         random.shuffle(shuffled_idx)
 

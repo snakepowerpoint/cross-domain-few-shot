@@ -29,6 +29,7 @@ parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--decay', default=0.96, type=float)
 parser.add_argument('--n_iter', default=40000, type=int)
 parser.add_argument('--num_class', default=200, type=int)
+parser.add_argument('--start_iter', default=0, type=int)
 
 def model_summary():
     model_vars = tf.trainable_variables()
@@ -42,6 +43,7 @@ def main(args):
     decay = args.decay
     batch_size = args.batch_size
     num_class = args.num_class
+    start_iter = args.start_iter
        
     ## establish training graph
     # inputs placeholder (support and query randomly sampled from two domain)
@@ -105,14 +107,14 @@ def main(args):
         sess.run(init)
         restore_from_checkpoint(sess, saver, lastest_checkpoint)
         mini_datagen = mini.batch_generator(label_dim=num_class)
-        for i_iter in range(args.n_iter):
+        for i_iter in range(start_iter, args.n_iter):
 
             # mini-imagenet ======================================================================
             curr_inputs, curr_labels = next(mini_datagen)
 
             # learning rate decay
-            if i_iter == 40000:
-                lr = lr * 0.5
+            #if i_iter == 40000:
+            #    lr = lr * 0.5
 
             # training                 
             sess.run([model.train_op], feed_dict={

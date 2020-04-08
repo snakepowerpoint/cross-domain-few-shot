@@ -123,9 +123,8 @@ def main(args):
     checkpoint_file = log_path + "/checkpoint.ckpt"
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
     
-    pretrain_path = 'logs/pretrain_baseline/pretrain_mini_sep_short_lr0.001_decay0.96/{}/'.format(
-        resume_epoch)
-    pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_path)
+    pretrain_log_path = os.path.join('logs', 'pretrain_baseline', 'pretrain_baseline_batch_en64_lr0.001_decay0.96') 
+    pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_log_path)
 
     init = [
         tf.global_variables_initializer(),
@@ -195,7 +194,7 @@ def main(args):
         print(lastest_checkpoint)
                 
         print("=== Ckeck pretrained model...")
-        print("=== pretrained model path: {}".format(pretrain_path))
+        print("=== pretrained model path: {}".format(pretrain_log_path))
         print(pretrain_ckeckpoint)
         if lastest_checkpoint:
             restore_from_checkpoint(sess, saver, lastest_checkpoint)
