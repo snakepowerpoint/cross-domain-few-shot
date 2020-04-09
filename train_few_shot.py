@@ -15,6 +15,8 @@ import argparse
 
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
+from src.model_rahul import PrototypeNet, RelationNet
+
 # miscellaneous
 import gc
 
@@ -89,11 +91,12 @@ def main(args):
     n_shot = args.n_shot
     n_query = args.n_query
     n_query_test = args.n_query_test
-    test_iter = args.test_iter
-
+    
     pretrain = args.pretrain
     resume_epoch = args.resume_epoch
     fine_tune = args.fine_tune
+    test_iter = args.test_iter
+    acc = np.empty((test_iter, 2))
 
     dataset = MiniImageNet()
     
@@ -128,7 +131,7 @@ def main(args):
     checkpoint_file = log_path + "/checkpoint.ckpt"
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
     
-    pretrain_log_path = os.path.join('logs', 'pretrain_baseline', 'pretrain_baseline_batch_en200_lr0.001_decay0.96') 
+    pretrain_log_path = os.path.join('logs', 'pretrain_baseline', 'pretrain_baseline_batch_en64_lr0.001_decay0.96') 
     pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_log_path)
 
     best_checkpoint_path = os.path.join(log_path, 'best_performance')
@@ -167,12 +170,12 @@ def main(args):
     # load CUB data
     cub = Cub(mode='test')
 
-    # # make queue
-    # mini_queue = queue.Queue(maxsize = 10)
+    # make queue
+    mini_queue = queue.Queue(maxsize = 10)
 
-    # # pass obj to preprocess thread and start
-    # pre_thread = Preprocessor(0, dataset, mini_queue, n_way, n_shot, n_query)
-    # pre_thread.start()
+    # pass obj to preprocess thread and start
+    pre_thread = Preprocessor(0, dataset, mini_queue, n_way, n_shot, n_query)
+    pre_thread.start()
 
     ## training
     with tf.Session() as sess:
@@ -207,8 +210,8 @@ def main(args):
 
             start = timeit.default_timer()
             # get support and query
-            support, query = dataset.get_task(n_way, n_shot, n_query, mode='train')
-            # support, query = mini_queue.get()
+            # support, query = dataset.get_task(n_way, n_shot, n_query, mode='train')
+            support, query = mini_queue.get()
             stop = timeit.default_timer()
             
             preprocess_time += (stop - start) 
@@ -269,23 +272,24 @@ def main(args):
 
                 if fine_tune == True:
                     # compute accuracy on 600 randomly generated task from mini-ImageNet and CUB
-                    test_iter = args.test_iter
-                    acc = np.empty((test_iter, 2))
-                    
                     iter_pbar = tqdm(range(test_iter))
                     for i in iter_pbar:
                         # get task from test
                         support, query = dataset.get_task(n_way, n_shot, n_query_test, aug=False, mode='test')
-                        val_acc = sess.run([model.test_acc], feed_dict={
+                        val_acc = sess.run([model.x_acc], feed_dict={
                             support_a: support,
-                            query_b_test: query,
+                            query_b: query,
+                            labels_input: test_labels,
+                            n_query_input: n_query_test,
                             is_training: False
                         })
 
                         cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test)
-                        cub_acc = sess.run([model.test_acc], feed_dict={
+                        cub_acc = sess.run([model.x_acc], feed_dict={
                             support_a: cub_support,
-                            query_b_test: cub_query,
+                            query_b: cub_query,
+                            labels_input: test_labels,
+                            n_query_input: n_query_test,
                             is_training: False
                         })
                         acc[i] = np.concatenate([val_acc, cub_acc])
