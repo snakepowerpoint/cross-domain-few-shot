@@ -79,7 +79,7 @@ def batchnorm_conv(inputs, name, is_training=tf.cast(True, tf.bool)):
         def batchnorm_train():
             batch_mean, batch_variance = tf.nn.moments(inputs, axes=[0, 1, 2], keep_dims=False)
 
-            decay = 0.0
+            decay = 0.9 # wei
             train_mean = tf.assign(pop_mean, pop_mean*decay + batch_mean*(1 - decay))
             train_variance = tf.assign(pop_variance, pop_variance*decay + batch_variance*(1 - decay))
 
