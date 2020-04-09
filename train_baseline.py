@@ -48,7 +48,7 @@ def main(args):
     ## establish training graph
     # inputs placeholder (support and query randomly sampled from two domain)
     inputs = tf.placeholder(tf.float32, shape=[batch_size, img_w, img_h, 3])  
-    labels = tf.placeholder(tf.int64, shape=[batch_size, num_class])
+    labels = tf.placeholder(tf.float32, shape=[batch_size, num_class])
     learning_rate = tf.placeholder(tf.float32)  
     is_training = tf.placeholder(tf.bool)
 
@@ -106,7 +106,7 @@ def main(args):
         print("=== Start training...")
         sess.run(init)
         restore_from_checkpoint(sess, saver, lastest_checkpoint)
-        mini_datagen = mini.batch_generator(label_dim=num_class)
+        mini_datagen = mini.batch_generator(label_dim=num_class, batch_size=batch_size)
         for i_iter in range(start_iter, args.n_iter):
 
             # mini-imagenet ======================================================================
