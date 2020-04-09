@@ -211,7 +211,7 @@ class RelationNet(object):
         weights = {}
         
         dtype = tf.float32
-        conv_initializer = tf.contrib.layers.xavier_initializer_conv2d(dtype=dtype)
+        conv_initializer = tf.contrib.layers.xavier_initializer_conv2d(uniform=False, dtype=dtype)
 
         with tf.variable_scope("res10_weights", reuse=tf.AUTO_REUSE):
             # conv1
@@ -312,8 +312,8 @@ class RelationNet(object):
         weights = {}
         
         dtype = tf.float32
-        conv_initializer = tf.contrib.layers.xavier_initializer_conv2d(dtype=dtype)
-        fc_initializer = tf.contrib.layers.xavier_initializer(dtype=dtype)
+        conv_initializer = tf.contrib.layers.xavier_initializer_conv2d(uniform=False, dtype=dtype)
+        fc_initializer = tf.contrib.layers.xavier_initializer(uniform=False, dtype=dtype)
 
         with tf.variable_scope('relation_mod_weights', reuse=tf.AUTO_REUSE):
             weights['conv1']    = tf.get_variable('conv1w', [3, 3, 1024, 64],  initializer=conv_initializer, dtype=dtype)
@@ -334,7 +334,9 @@ class RelationNet(object):
         return tf.reduce_mean(tf.square(y_true - y_pred))
 
     def ce_loss(self, y_pred, y_true):
-        ce_loss = tf.nn.softmax_cross_entropy_with_logits(logits=y_pred, labels=y_true)
+        #ce_loss = tf.nn.softmax_cross_entropy_with_logits(logits=y_pred, labels=y_true)
+        log_sm_vals = tf.nn.log_softmax(y_pred)
+        ce_loss = tf.reduce_sum(-1*tf.multiply(y_true, log_sm_vals), axis=1)
         return tf.reduce_mean(ce_loss)
 
     def train(self, support, query, regularized=True):
