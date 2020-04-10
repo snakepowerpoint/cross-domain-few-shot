@@ -60,7 +60,7 @@ def convolution_layer(inputs,
             net = tf.reshape(net, [-1, int(np.prod(net.get_shape()[1:]))], name=name+"_flatout")
     return net
 
-def batchnorm_conv(inputs, name, is_training=tf.cast(True, tf.bool)):
+def batchnorm_conv(inputs, name, momentum=0.1, is_training=tf.cast(True, tf.bool)):
     with tf.variable_scope(name+"_bn", reuse=tf.AUTO_REUSE):
         inputs = tf.identity(inputs)
         channels = inputs.get_shape()[3]
@@ -79,9 +79,8 @@ def batchnorm_conv(inputs, name, is_training=tf.cast(True, tf.bool)):
         def batchnorm_train():
             batch_mean, batch_variance = tf.nn.moments(inputs, axes=[0, 1, 2], keep_dims=False)
 
-            decay = 0.9 # wei
-            train_mean = tf.assign(pop_mean, pop_mean*decay + batch_mean*(1 - decay))
-            train_variance = tf.assign(pop_variance, pop_variance*decay + batch_variance*(1 - decay))
+            train_mean = tf.assign(pop_mean, pop_mean*(1-momentum) + batch_mean*momentum)
+            train_variance = tf.assign(pop_variance, pop_variance*(1-momentum) + batch_variance*momentum)
 
             with tf.control_dependencies([train_mean, train_variance]):
                 return tf.nn.batch_normalization(inputs, batch_mean, batch_variance, beta, gamma, epsilon)
@@ -184,12 +183,12 @@ def fc_layer_test(inputs,
 #     self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.name)
 #     return outputs
 
-def convolution_layer_meta(inputs, weight, bias, strides, name, is_training=True, is_bn=False, padding='SAME', activat_fn=tf.nn.relu):
+def convolution_layer_meta(inputs, weight, bias, strides, name, is_training=True, is_bn=False, bn_momentum=0.1, padding='SAME', activat_fn=tf.nn.relu):
 
     x = tf.nn.conv2d(inputs, weight, strides, padding, name=name + '_conv2d') + bias
     
     if is_bn == True:
-        x = batchnorm_conv(x, name=name, is_training=is_training)
+        x = batchnorm_conv(x, name=name, momentum=bn_momentum, is_training=is_training)
 
     if activat_fn is not None:
         x = activat_fn(x, name=name + "_out")
