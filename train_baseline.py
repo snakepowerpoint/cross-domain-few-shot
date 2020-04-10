@@ -14,7 +14,7 @@ import os
 import argparse
 
 # customerized 
-from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
+from src.load_data import Pacs, Cub, Omniglot, MiniImageNet, MiniImageNetFull
 from src.model import PrototypeNet, RelationNet ### use model_local.py
 
 # miscellaneous
@@ -27,7 +27,7 @@ parser.add_argument('--test_name', default='pretrain_mini', type=str)
 parser.add_argument('--batch_size', default=64, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--decay', default=0.96, type=float)
-parser.add_argument('--n_iter', default=40000, type=int)
+parser.add_argument('--n_iter', default=240000, type=int)
 parser.add_argument('--num_class', default=200, type=int)
 parser.add_argument('--start_iter', default=0, type=int)
 
@@ -58,7 +58,7 @@ def main(args):
     print("Decay second learning rate: ", decay)
     model = RelationNet(0, 0, 0, alpha=0, gamma=lr, decay=decay,
                         backbone='resnet', is_training=is_training)
-    model.train_baseline(inputs=inputs, labels=labels, label_dim=num_class, learning_rate=learning_rate, batch_size=batch_size)
+    model.train_baseline(inputs=inputs, labels=labels, label_dim=num_class, learning_rate=learning_rate)
 
     model_summary()
 
@@ -86,14 +86,14 @@ def main(args):
 
     print("=== Load data...")
     # load mini-imagenet
-    mini = MiniImageNet()
+    mini = MiniImageNetFull()
     
     ## training
     with tf.Session() as sess:
 
         # Creates a file writer for the log directory.
         file_writer_train = tf.summary.FileWriter(os.path.join(log_path, "train"), sess.graph)
-        file_writer_test = tf.summary.FileWriter(os.path.join(log_path, "test"), sess.graph)
+        #file_writer_test = tf.summary.FileWriter(os.path.join(log_path, "test"), sess.graph)
 
         # store variables
         tf.summary.image("input", inputs[:4], max_outputs=4, collections=['train', 'test'])
@@ -160,7 +160,7 @@ def main(args):
                 print('Save session at step %d' % (i_iter+1))
 
         file_writer_train.close()
-        file_writer_test.close()
+        #file_writer_test.close()
 
 if __name__ == '__main__':
     args = parser.parse_args()

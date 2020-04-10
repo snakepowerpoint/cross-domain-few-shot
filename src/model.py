@@ -531,7 +531,7 @@ class RelationNet(object):
         self.meta_op = tf.train.AdamOptimizer(
             self.gamma, name="meta_opt").minimize(self.total_loss, global_step=global_step)
 
-    def train_baseline(self, inputs, labels, learning_rate, label_dim=64, batch_size=16, regularized=False):
+    def train_baseline(self, inputs, labels, learning_rate, label_dim=64, regularized=False):
         
         ### build model
         # create network variables
