@@ -156,8 +156,8 @@ def fc_layer_test(inputs,
         if is_bias:
             bias = tf.get_variable(
                 "bias", [output_shape], tf.float32, initializer=tf.zeros_initializer())
-        # Note that the '+' operation automatically broadcasts the bias.
-        net = tf.nn.bias_add(net, bias)
+            # Note that the '+' operation automatically broadcasts the bias.
+            net = tf.nn.bias_add(net, bias)
 
         if activat_fn is not None:
             net = activat_fn(net, name=name+"_out")

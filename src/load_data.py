@@ -249,6 +249,9 @@ class MiniImageNet(object):
         return support, query
     
     def batch_generator(self, label_dim=64, batch_size=64, size=(224, 224), aug=True, mode='train'):
+        # if batch_size % 64 != 0:
+        #     print(">>> batch_size = {} should be divisible by 64.".format(batch_size))
+        #     return None, None
         
         curr_batch = np.empty((batch_size, 84, 84, 3), dtype=np.uint8)
         curr_label = np.empty((batch_size, label_dim), dtype=np.uint8)
