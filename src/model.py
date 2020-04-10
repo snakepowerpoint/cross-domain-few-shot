@@ -406,7 +406,7 @@ class RelationNet(object):
         support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
 
         h, w, c = support_x_encode.get_shape().as_list()[1:]
-        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.reduce_mean(tf.reshape(support_x_encode, [n_way, n_shot, h, w, c]), axis=1)
         support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
 
         query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
@@ -451,7 +451,7 @@ class RelationNet(object):
         support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
 
         h, w, c = support_x_encode.get_shape().as_list()[1:]
-        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.reduce_mean(tf.reshape(support_x_encode, [n_way, n_shot, h, w, c]), axis=1)
         support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
 
         query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
@@ -494,7 +494,7 @@ class RelationNet(object):
         support_a_encode = self.resnet10_encoder_meta(support_a, fast_res10_weights, is_training=self.is_training)
 
         h, w, c = support_a_encode.get_shape().as_list()[1:]
-        support_a_encode = tf.reduce_sum(tf.reshape(support_a_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_a_encode = tf.reduce_mean(tf.reshape(support_a_encode, [n_way, n_shot, h, w, c]), axis=1)
         support_a_encode = tf.tile(tf.expand_dims(support_a_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
 
         query_b_encode = self.resnet10_encoder_meta(query_b, fast_res10_weights, is_training=self.is_training)
