@@ -392,7 +392,7 @@ class RelationNet(object):
         
         return self.train_op, self.train_loss, self.train_acc, global_step
 
-    def train_var(self, support_x, query_x, regularized=False):
+    def build(self, n_way, n_shot, n_query, support_x, query_x, labels, regularized=False):
         
         ### build model
         # create network variables
@@ -400,19 +400,18 @@ class RelationNet(object):
         self.relation_weights = relation_weights = self.relation_module_weights()
 
         # create labels
-        labels = np.repeat(np.arange(self.n_way), repeats=self.n_query).astype(np.uint8)  # [75, 1]
-        one_hot_labels = tf.one_hot(labels, depth=self.n_way)  # [75, 5]
+        one_hot_labels = tf.one_hot(labels, depth=n_way)  # [75, 5]
 
         # build res10 network - for support & query x =================================================================================      
         support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
 
         h, w, c = support_x_encode.get_shape().as_list()[1:]
-        support_x_encode = tf.reduce_mean(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1) # wei
-        support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [self.n_query * self.n_way, 1, 1, 1, 1]) 
+        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
 
         query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
         
-        query_x_encode = tf.tile(tf.expand_dims(query_x_encode, axis=0), [self.n_way, 1, 1, 1, 1])
+        query_x_encode = tf.tile(tf.expand_dims(query_x_encode, axis=0), [n_way, 1, 1, 1, 1])
         query_x_encode = tf.transpose(query_x_encode, perm=[1, 0, 2, 3, 4])
 
         relation_x_pairs = tf.concat([support_x_encode, query_x_encode], -1)
@@ -420,7 +419,7 @@ class RelationNet(object):
 
         # build relation network - for support & query x 
         relations_x = self.relation_module_meta(relation_x_pairs, relation_weights, is_training=self.is_training)  # [75*5, 1]
-        relations_x = tf.reshape(relations_x, [-1, self.n_way])  # [75, 5]
+        relations_x = tf.reshape(relations_x, [-1, n_way])  # [75, 5]
         
         # x loss & acc
         self.x_loss = self.ce_loss(y_pred=relations_x, y_true=one_hot_labels)
@@ -437,7 +436,8 @@ class RelationNet(object):
         self.train_op = tf.train.AdamOptimizer(
             self.gamma, name="train_op").minimize(self.x_loss, global_step=global_step)
 
-    def train_meta(self, support_x, query_x, support_a, query_b, first_lr, regularized=False):
+    def build_meta(self, n_way, n_shot, n_query, support_x, query_x, support_a, query_b, 
+                   labels, first_lr, regularized=False):
         
         ### build model
         # create network variables
@@ -445,19 +445,18 @@ class RelationNet(object):
         self.relation_weights = relation_weights = self.relation_module_weights()
 
         # create labels
-        labels = np.repeat(np.arange(self.n_way), repeats=self.n_query).astype(np.uint8)  # [75, 1]
-        one_hot_labels = tf.one_hot(labels, depth=self.n_way)  # [75, 5]
+        one_hot_labels = tf.one_hot(labels, depth=n_way)  # [75, 5]
 
         # build res10 network - for support & query x =================================================================================      
         support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
 
         h, w, c = support_x_encode.get_shape().as_list()[1:]
-        support_x_encode = tf.reduce_mean(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1) # wei
-        support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [self.n_query * self.n_way, 1, 1, 1, 1]) 
+        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
 
         query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
         
-        query_x_encode = tf.tile(tf.expand_dims(query_x_encode, axis=0), [self.n_way, 1, 1, 1, 1])
+        query_x_encode = tf.tile(tf.expand_dims(query_x_encode, axis=0), [n_way, 1, 1, 1, 1])
         query_x_encode = tf.transpose(query_x_encode, perm=[1, 0, 2, 3, 4])
 
         relation_x_pairs = tf.concat([support_x_encode, query_x_encode], -1)
@@ -465,7 +464,7 @@ class RelationNet(object):
 
         # build relation network - for support & query x 
         relations_x = self.relation_module_meta(relation_x_pairs, relation_weights, is_training=self.is_training)  # [75*5, 1]
-        relations_x = tf.reshape(relations_x, [-1, self.n_way])  # [75, 5]
+        relations_x = tf.reshape(relations_x, [-1, n_way])  # [75, 5]
         
         # x loss & acc
         self.x_loss = self.ce_loss(y_pred=relations_x, y_true=one_hot_labels)
@@ -495,12 +494,12 @@ class RelationNet(object):
         support_a_encode = self.resnet10_encoder_meta(support_a, fast_res10_weights, is_training=self.is_training)
 
         h, w, c = support_a_encode.get_shape().as_list()[1:]
-        support_a_encode = tf.reduce_mean(tf.reshape(support_a_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
-        support_a_encode = tf.tile(tf.expand_dims(support_a_encode, axis=0), [self.n_query * self.n_way, 1, 1, 1, 1]) 
+        support_a_encode = tf.reduce_sum(tf.reshape(support_a_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_a_encode = tf.tile(tf.expand_dims(support_a_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
 
         query_b_encode = self.resnet10_encoder_meta(query_b, fast_res10_weights, is_training=self.is_training)
         
-        query_b_encode = tf.tile(tf.expand_dims(query_b_encode, axis=0), [self.n_way, 1, 1, 1, 1])
+        query_b_encode = tf.tile(tf.expand_dims(query_b_encode, axis=0), [n_way, 1, 1, 1, 1])
         query_b_encode = tf.transpose(query_b_encode, perm=[1, 0, 2, 3, 4])
 
         relation_ab_pairs = tf.concat([support_a_encode, query_b_encode], -1)
@@ -508,7 +507,7 @@ class RelationNet(object):
 
         # build relation network - for support a & query b
         relations_ab = self.relation_module_meta(relation_ab_pairs, fast_relation_weights, is_training=self.is_training)  # [75*5, 1]
-        relations_ab = tf.reshape(relations_ab, [-1, self.n_way])  # [75, 5]
+        relations_ab = tf.reshape(relations_ab, [-1, n_way])  # [75, 5]
 
         # ab loss & acc
         self.ab_loss = self.ce_loss(y_pred=relations_ab, y_true=one_hot_labels)

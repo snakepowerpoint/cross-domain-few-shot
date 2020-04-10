@@ -15,7 +15,7 @@ import argparse
 
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
-from src.model_rahul import PrototypeNet, RelationNet
+from src.model import PrototypeNet, RelationNet
 
 # miscellaneous
 import gc
