@@ -293,18 +293,18 @@ class RelationNet(object):
     def relation_module_meta(self, inputs, weights, loss_type='softmax', is_training=True):
         
         # conv 1
-        x =         convolution_layer_meta(inputs, weights['conv1'], weights['b1'], [1, 1, 1, 1], name='M_conv1', is_training=is_training, is_bn=True, padding="SAME")
+        x =         convolution_layer_meta(inputs, weights['conv1'], weights['b1'], [1, 1, 1, 1], name='M_conv1', is_training=is_training, is_bn=True, bn_momentum=1, padding="SAME")
         x =         max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], name='max_1', padding='VALID')        
         
         # conv 2
-        x =         convolution_layer_meta(x, weights['conv2'], weights['b2'], [1, 1, 1, 1], name='M_conv2', is_training=is_training, is_bn=True, padding="SAME")
+        x =         convolution_layer_meta(x, weights['conv2'], weights['b2'], [1, 1, 1, 1], name='M_conv2', is_training=is_training, is_bn=True, bn_momentum=1, padding="SAME")
         x =         max_pool(x, [1, 2, 2, 1], [1, 2, 2, 1], name='max_2', padding='VALID')  
 
         # fc 3
-        x = fc_layer_meta(x, weights['fc3'], weights['b3'], name='M_fc3', activat_fn=tf.nn.relu)
+        x =         fc_layer_meta(x, weights['fc3'], weights['b3'], name='M_fc3', activat_fn=tf.nn.relu)
 
         # fc 4
-        x = fc_layer_meta(x, weights['fc4'], weights['b4'], name='M_fc4', activat_fn=None)
+        x =         fc_layer_meta(x, weights['fc4'], weights['b4'], name='M_fc4', activat_fn=None)
 
         return x
 
@@ -355,7 +355,7 @@ class RelationNet(object):
         else:
             support_encode = self.resnet10_encoder(support, is_training=self.is_training)
         h, w, c = support_encode.get_shape().as_list()[1:]
-        support_encode = tf.reduce_sum(tf.reshape(support_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_encode = tf.reduce_mean(tf.reshape(support_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
         support_encode = tf.tile(tf.expand_dims(support_encode, axis=0), [self.n_query * self.n_way, 1, 1, 1, 1]) 
         
         # query
@@ -407,7 +407,7 @@ class RelationNet(object):
         support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
 
         h, w, c = support_x_encode.get_shape().as_list()[1:]
-        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.reduce_mean(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1) # wei
         support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [self.n_query * self.n_way, 1, 1, 1, 1]) 
 
         query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
@@ -452,7 +452,7 @@ class RelationNet(object):
         support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
 
         h, w, c = support_x_encode.get_shape().as_list()[1:]
-        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.reduce_mean(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1) # wei
         support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [self.n_query * self.n_way, 1, 1, 1, 1]) 
 
         query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
@@ -495,7 +495,7 @@ class RelationNet(object):
         support_a_encode = self.resnet10_encoder_meta(support_a, fast_res10_weights, is_training=self.is_training)
 
         h, w, c = support_a_encode.get_shape().as_list()[1:]
-        support_a_encode = tf.reduce_sum(tf.reshape(support_a_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_a_encode = tf.reduce_mean(tf.reshape(support_a_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
         support_a_encode = tf.tile(tf.expand_dims(support_a_encode, axis=0), [self.n_query * self.n_way, 1, 1, 1, 1]) 
 
         query_b_encode = self.resnet10_encoder_meta(query_b, fast_res10_weights, is_training=self.is_training)
@@ -562,7 +562,7 @@ class RelationNet(object):
         else:
             support_encode = self.resnet10_encoder(support, is_training=self.is_training, reuse=True)
         h, w, c = support_encode.get_shape().as_list()[1:]
-        support_encode = tf.reduce_sum(tf.reshape(support_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_encode = tf.reduce_mean(tf.reshape(support_encode, [self.n_way, self.n_shot, h, w, c]), axis=1) # wei
         support_encode = tf.tile(tf.expand_dims(support_encode, axis=0), [self.n_query * self.n_way, 1, 1, 1, 1]) 
         
         # query
@@ -607,7 +607,7 @@ class RelationNet(object):
         support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
 
         h, w, c = support_x_encode.get_shape().as_list()[1:]
-        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.reduce_mean(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
         support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [self.n_query_test * self.n_way, 1, 1, 1, 1]) 
 
         query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
@@ -647,7 +647,7 @@ class RelationNet(object):
         support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
 
         h, w, c = support_x_encode.get_shape().as_list()[1:]
-        support_x_encode = tf.reduce_sum(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.reduce_mean(tf.reshape(support_x_encode, [self.n_way, self.n_shot, h, w, c]), axis=1)
         support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [self.n_query_test * self.n_way, 1, 1, 1, 1]) 
 
         query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
