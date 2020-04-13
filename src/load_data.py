@@ -14,6 +14,8 @@ import timeit
 # identify server mac
 import netifaces
 
+from tqdm import tqdm
+
 # for mini-imagenet
 mean = [0.485, 0.456, 0.406]
 std = [0.229, 0.224, 0.225]
@@ -181,6 +183,28 @@ class MiniImageNetFull(object):
         self.val_label_mapping, self.val_img_path_mapping = self._get_label_mapping(mode='val')
         self.test_label_mapping, self.test_img_path_mapping = self._get_label_mapping(mode='test')
 
+        self.train_image = self._load_train_image()
+
+    def _load_train_image(self):
+        all_categories = sorted(list(self.train_label_mapping.keys()))
+        train_image = {}
+        for category in all_categories:
+            train_image[category] = {}
+
+        print("=== Load Full Size Mini-ImageNet...")
+        all_idx_bar = tqdm(range(600*len(all_categories)))
+        for idx in all_idx_bar:     
+            category = all_categories[idx // 600]
+            img_idx = idx % 600
+
+            selected_img_path = self.train_img_path_mapping[category][img_idx]
+
+            s_img = scipy.misc.imread(selected_img_path, mode='RGB').astype(np.uint8)
+            train_image[category][img_idx] = s_img
+        print(">>> Done.")
+        
+        return train_image
+
     def _get_label_mapping(self, mode):
         class_path = os.path.join(self.data_path, mode)
         labels = os.listdir(class_path)
@@ -210,16 +234,28 @@ class MiniImageNetFull(object):
         else:
             raise ValueError('Unknown mode! Please specify mode as either one of train/val/test.')
 
-        for i, category in enumerate(selected_categories):
-            selected_imgs_path = random.sample(img_path_mapping[category], k=n_shot+n_query)
+        if mode == 'train':
+            for i, category in enumerate(selected_categories):
+                selected_idx = random.sample(range(len(img_path_mapping[category])), k=n_shot+n_query)
 
-            for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
-                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
-                support[i][j] = resize_img(curr_img, size=size, aug=aug)
-            
-            for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
-                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
-                query[i][j] = resize_img(curr_img, size=size, aug=aug)
+                for j, idx in enumerate(selected_idx[:n_shot]):
+                    curr_img = self.train_image[category][idx]
+                    support[i][j] = resize_img(curr_img, size=size, aug=aug)
+                
+                for j, idx in enumerate(selected_idx[n_shot:]):
+                    curr_img = self.train_image[category][idx]
+                    query[i][j] = resize_img(curr_img, size=size, aug=aug)
+        else:
+            for i, category in enumerate(selected_categories):
+                selected_imgs_path = random.sample(img_path_mapping[category], k=n_shot+n_query)
+
+                for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
+                    curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                    support[i][j] = resize_img(curr_img, size=size, aug=aug)
+                
+                for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
+                    curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                    query[i][j] = resize_img(curr_img, size=size, aug=aug)
 
         return support, query
 
@@ -253,12 +289,13 @@ class MiniImageNetFull(object):
                 category = all_categories[idx // 600]
                 img_idx = idx % 600
                 
-                selected_img_path = img_path_mapping[category][img_idx]
+                #selected_img_path = img_path_mapping[category][img_idx]
                 
                 label = np.zeros((1, label_dim))
                 label[0, label_mapping[category]] = 1
 
-                s_img = scipy.misc.imread(selected_img_path, mode='RGB').astype(np.uint8)
+                #s_img = scipy.misc.imread(selected_img_path, mode='RGB').astype(np.uint8)
+                s_img = self.train_image[category][img_idx]
                 curr_batch[img_count] = resize_img(s_img, size=size, aug=aug)
                 curr_label[img_count] = label
                 img_count += 1
