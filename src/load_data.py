@@ -3,6 +3,7 @@ import os
 import pickle
 import cv2
 from PIL import Image
+import json
 
 # computation
 import numpy as np
@@ -17,6 +18,222 @@ import netifaces
 # for mini-imagenet
 mean = [0.485, 0.456, 0.406]
 std = [0.229, 0.224, 0.225]
+
+
+class Cars(object):
+    def __init__(self):
+        # self.data_path_base = define_dir_by_mac()
+        # self.data_path = self.data_path_base + 'cross-domain-few-shot/'
+        self.data_path = '/data/rahul/workspace/cross-domain-few-shot/CrossDomainFewShot/filelists/cars'
+        self.meta = self._load_meta()
+        
+    def _load_meta(self):
+        modes = ['base', 'val', 'novel']
+        meta = {}
+        for mode in modes:
+            json_path = os.path.join(self.data_path, mode + '.json')
+            with open(json_path, 'r') as f:
+                json_file = json.load(f)
+                labels = json_file['image_labels']
+                meta[mode] = {}
+                for i in range(len(labels)):
+                    image_name = json_file['image_names'][i]
+                    label = labels[i]
+                    label_name = json_file['label_names'][label]
+                    if label_name not in list(meta[mode].keys()):
+                        meta[mode][label_name] = []
+                    meta[mode][label_name].append(image_name)
+        return meta
+
+    def get_task_from_raw(self, n_way, n_shot, n_query, size=(224, 224), aug=True, mode='train'):
+        if mode == 'train':
+            split = 'base'
+        elif mode == 'val':
+            split = 'val'
+        elif mode == 'test':
+            split = 'novel'
+        else:
+            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test')
+        
+        selected_categories = random.sample(list(self.meta[split].keys()), k=n_way)
+
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
+
+        for i, category in enumerate(selected_categories):
+            selected_imgs_path = random.sample(self.meta[split][category], k=n_shot+n_query)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                support[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                query[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+        return support, query
+        
+
+class Places(object):
+    def __init__(self):
+        # self.data_path_base = define_dir_by_mac()
+        # self.data_path = self.data_path_base + 'cross-domain-few-shot/'
+        self.data_path = '/data/rahul/workspace/cross-domain-few-shot/CrossDomainFewShot/filelists/places'
+        self.meta = self._load_meta()
+    
+    def _load_meta(self):
+        modes = ['base', 'val', 'novel']
+        meta = {}
+        for mode in modes:
+            json_path = os.path.join(self.data_path, mode + '.json')
+            with open(json_path, 'r') as f:
+                json_file = json.load(f)
+                labels = json_file['image_labels']
+                meta[mode] = {}
+                for i in range(len(labels)):
+                    image_name = json_file['image_names'][i]
+                    label = labels[i]
+                    label_name = json_file['label_names'][label]
+                    if label_name not in list(meta[mode].keys()):
+                        meta[mode][label_name] = []
+                    meta[mode][label_name].append(image_name)
+        return meta
+
+    def get_task_from_raw(self, n_way, n_shot, n_query, size=(224, 224), aug=True, mode='train'):
+        if mode == 'train':
+            split = 'base'
+        elif mode == 'val':
+            split = 'val'
+        elif mode == 'test':
+            split = 'novel'
+        else:
+            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test')
+        
+        selected_categories = random.sample(list(self.meta[split].keys()), k=n_way)
+
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
+
+        for i, category in enumerate(selected_categories):
+            selected_imgs_path = random.sample(self.meta[split][category], k=n_shot+n_query)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                support[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                query[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+        return support, query
+
+
+class Plantae(object):
+    def __init__(self):
+        # self.data_path_base = define_dir_by_mac()
+        # self.data_path = self.data_path_base + 'cross-domain-few-shot/'
+        self.data_path = '/data/rahul/workspace/cross-domain-few-shot/CrossDomainFewShot/filelists/plantae'
+        self.meta = self._load_meta()
+
+    def _load_meta(self):
+        modes = ['base', 'val', 'novel']
+        meta = {}
+        for mode in modes:
+            json_path = os.path.join(self.data_path, mode + '.json')
+            with open(json_path, 'r') as f:
+                json_file = json.load(f)
+                labels = json_file['image_labels']
+                meta[mode] = {}
+                for i in range(len(labels)):
+                    image_name = json_file['image_names'][i]
+                    label = labels[i]
+                    label_name = json_file['label_names'][label]
+                    if label_name not in list(meta[mode].keys()):
+                        meta[mode][label_name] = []
+                    meta[mode][label_name].append(image_name)
+        return meta
+
+    def get_task_from_raw(self, n_way, n_shot, n_query, size=(224, 224), aug=True, mode='train'):
+        if mode == 'train':
+            split = 'base'
+        elif mode == 'val':
+            split = 'val'
+        elif mode == 'test':
+            split = 'novel'
+        else:
+            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test')
+        
+        selected_categories = random.sample(list(self.meta[split].keys()), k=n_way)
+
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
+
+        for i, category in enumerate(selected_categories):
+            selected_imgs_path = random.sample(self.meta[split][category], k=n_shot+n_query)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                support[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                query[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+        return support, query
+
+
+class Cub(object):
+    def __init__(self):
+        # self.data_path_base = define_dir_by_mac()
+        # self.data_path = self.data_path_base + 'cross-domain-few-shot/'
+        self.data_path = '/data/rahul/workspace/cross-domain-few-shot/CrossDomainFewShot/filelists/cub'
+        self.meta = self._load_meta()
+
+    def _load_meta(self):
+        modes = ['base', 'val', 'novel']
+        meta = {}
+        for mode in modes:
+            json_path = os.path.join(self.data_path, mode + '.json')
+            with open(json_path, 'r') as f:
+                json_file = json.load(f)
+                labels = json_file['image_labels']
+                meta[mode] = {}
+                for i in range(len(labels)):
+                    image_name = json_file['image_names'][i]
+                    label = labels[i]
+                    label_name = json_file['label_names'][label]
+                    if label_name not in list(meta[mode].keys()):
+                        meta[mode][label_name] = []
+                    meta[mode][label_name].append(image_name)
+        return meta
+
+    def get_task_from_raw(self, n_way, n_shot, n_query, size=(224, 224), aug=True, mode='train'):
+        if mode == 'train':
+            split = 'base'
+        elif mode == 'val':
+            split = 'val'
+        elif mode == 'test':
+            split = 'novel'
+        else:
+            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test')
+        
+        selected_categories = random.sample(list(self.meta[split].keys()), k=n_way)
+
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
+
+        for i, category in enumerate(selected_categories):
+            selected_imgs_path = random.sample(self.meta[split][category], k=n_shot+n_query)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                support[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                query[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+        return support, query
 
 
 class Pacs(object):
@@ -108,68 +325,68 @@ class Omniglot(object):
         return support, query
 
 
-class Cub(object):
-    def __init__(self, mode='test'):
-        self.data_path_base = define_dir_by_mac()
-        #self.data_path = self.data_path_base + 'cross-domain-few-shot/' # wei, no need to load pickle anymore
-        self.mode = mode
-        #self.data_dict = self._load_data() # wei, no need to load pickle anymore
+# class Cub(object):
+#     def __init__(self, mode='test'):
+#         self.data_path_base = define_dir_by_mac()
+#         #self.data_path = self.data_path_base + 'cross-domain-few-shot/' # wei, no need to load pickle anymore
+#         self.mode = mode
+#         #self.data_dict = self._load_data() # wei, no need to load pickle anymore
         
-        self.raw_data_path = '/data/common/cross-domain-few-shot/cub200/CUB_200_2011/images' 
-        self.raw_folder_list = [os.path.join(self.raw_data_path, f) for f in os.listdir(self.raw_data_path)]
-        self.raw_img_list = {}
-        for f in self.raw_folder_list:
-            self.raw_img_list[f] = [os.path.join(f, img) for img in os.listdir(f)]
+#         self.raw_data_path = '/data/common/cross-domain-few-shot/cub200/CUB_200_2011/images' 
+#         self.raw_folder_list = [os.path.join(self.raw_data_path, f) for f in os.listdir(self.raw_data_path)]
+#         self.raw_img_list = {}
+#         for f in self.raw_folder_list:
+#             self.raw_img_list[f] = [os.path.join(f, img) for img in os.listdir(f)]
 
-    def _load_data(self):
-        data_path = os.path.join(self.data_path, 'cub.pickle')
-        with open(data_path, 'rb') as f:
-            data_dict = pickle.load(f)
+#     def _load_data(self):
+#         data_path = os.path.join(self.data_path, 'cub.pickle')
+#         with open(data_path, 'rb') as f:
+#             data_dict = pickle.load(f)
         
-        if self.mode == 'train':
-            data_dict.pop('test', None)
-        else:
-            data_dict.pop('val', None)
-            data_dict.pop('train', None)
+#         if self.mode == 'train':
+#             data_dict.pop('test', None)
+#         else:
+#             data_dict.pop('val', None)
+#             data_dict.pop('train', None)
         
-        return data_dict
+#         return data_dict
 
-    def get_task(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=False):
-        mode = self.mode
-        selected_categories = random.sample(list(self.data_dict[mode].keys()), k=n_way)
+#     def get_task(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=False):
+#         mode = self.mode
+#         selected_categories = random.sample(list(self.data_dict[mode].keys()), k=n_way)
 
-        support = np.empty((n_way, n_shot, size[0], size[1], 3))
-        query = np.empty((n_way, n_query, size[0], size[1], 3))
-        for i, category in enumerate(selected_categories):
-            num_img = len(self.data_dict[mode][category])
-            selected_imgs = random.sample(range(num_img), k=n_shot+n_query)
+#         support = np.empty((n_way, n_shot, size[0], size[1], 3))
+#         query = np.empty((n_way, n_query, size[0], size[1], 3))
+#         for i, category in enumerate(selected_categories):
+#             num_img = len(self.data_dict[mode][category])
+#             selected_imgs = random.sample(range(num_img), k=n_shot+n_query)
             
-            s_imgs = self.data_dict[mode][category][selected_imgs[:n_shot]]
-            q_imgs = self.data_dict[mode][category][selected_imgs[n_shot:]]
+#             s_imgs = self.data_dict[mode][category][selected_imgs[:n_shot]]
+#             q_imgs = self.data_dict[mode][category][selected_imgs[n_shot:]]
 
-            support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
-            query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
+#             support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
+#             query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
 
-        return support, query
+#         return support, query
 
-    def get_task_from_raw(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=False):
-        selected_categories = random.sample(self.raw_folder_list, k=n_way)
+#     def get_task_from_raw(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=False):
+#         selected_categories = random.sample(self.raw_folder_list, k=n_way)
         
-        support = np.empty((n_way, n_shot, size[0], size[1], 3))
-        query = np.empty((n_way, n_query, size[0], size[1], 3))
+#         support = np.empty((n_way, n_shot, size[0], size[1], 3))
+#         query = np.empty((n_way, n_query, size[0], size[1], 3))
 
-        for i, category in enumerate(selected_categories):
-            selected_imgs_path = random.sample(self.raw_img_list[category], k=n_shot+n_query)
+#         for i, category in enumerate(selected_categories):
+#             selected_imgs_path = random.sample(self.raw_img_list[category], k=n_shot+n_query)
 
-            for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
-                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
-                support[i][j] = resize_img(curr_img, size=size, aug=aug)
+#             for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
+#                 curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+#                 support[i][j] = resize_img(curr_img, size=size, aug=aug)
             
-            for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
-                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
-                query[i][j] = resize_img(curr_img, size=size, aug=aug)
+#             for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
+#                 curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+#                 query[i][j] = resize_img(curr_img, size=size, aug=aug)
 
-        return support, query
+#         return support, query
 
 
 class MiniImageNetFull(object):
@@ -259,6 +476,71 @@ class MiniImageNetFull(object):
                 label[0, label_mapping[category]] = 1
 
                 s_img = scipy.misc.imread(selected_img_path, mode='RGB').astype(np.uint8)
+                curr_batch[img_count] = resize_img(s_img, size=size, aug=aug)
+                curr_label[img_count] = label
+                img_count += 1
+
+                if img_count % batch_size == 0 and img_count != 0:        
+                    img_count = 0
+
+                    yield curr_batch, curr_label
+        
+            img_count = 0
+            epoch += 1
+            print(">>> epoch: {}".format(epoch))
+            random.shuffle(shuffled_idx)
+
+    def _load_data(self, categories, path_mapping):
+        data_dict = {}
+        for category in categories:
+            num_img = len(path_mapping[category])
+            data_dict[category] = list(range(num_img))
+            for i in range(num_img):
+                img_path = path_mapping[category][i]
+                s_img = scipy.misc.imread(img_path, mode='RGB').astype(np.uint8)
+                data_dict[category][i] = s_img
+        return data_dict
+        
+    def batch_generator_load_all(self, label_dim=64, batch_size=64, size=(224, 224), aug=True, mode='train'):
+        if mode == 'train':
+            all_categories = sorted(list(self.train_label_mapping.keys()))
+            img_path_mapping = self.train_img_path_mapping
+            label_mapping = self.train_label_mapping
+            aug = True
+        elif mode == 'val':
+            all_categories = sorted(list(self.val_label_mapping.keys()))
+            img_path_mapping = self.val_img_path_mapping
+            label_mapping = self.val_label_mapping
+            aug = False
+        elif mode == 'test':
+            all_categories = sorted(list(self.test_label_mapping.keys()))
+            img_path_mapping = self.test_img_path_mapping
+            label_mapping = self.test_label_mapping
+            aug = False
+        else: 
+            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test.')
+        
+        curr_batch = np.empty((batch_size, size[0], size[1], 3))
+        curr_label = np.empty((batch_size, label_dim), dtype=np.uint8)
+        img_count = 0
+        epoch = 0
+
+        ###
+        data_dict = self._load_data(categories=all_categories, path_mapping=img_path_mapping)
+        
+        shuffled_idx = list(range(600*len(all_categories)))
+        random.shuffle(shuffled_idx)
+
+        while True:
+        
+            for idx in shuffled_idx:     
+                category = all_categories[idx // 600]
+                img_idx = idx % 600
+                
+                label = np.zeros((1, label_dim))
+                label[0, label_mapping[category]] = 1
+                
+                s_img = data_dict[category][img_idx]
                 curr_batch[img_count] = resize_img(s_img, size=size, aug=aug)
                 curr_label[img_count] = label
                 img_count += 1
@@ -391,6 +673,7 @@ class MiniImageNet(object):
             epoch += 1
             print(">>> epoch: {}".format(epoch))
             random.shuffle(shuffled_idx)
+
 
 def resize_batch_img(imgs, size, aug):       
     resized_img = np.empty((imgs.shape[0], size[0], size[1], 3))
