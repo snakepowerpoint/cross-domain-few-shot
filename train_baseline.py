@@ -30,6 +30,7 @@ parser.add_argument('--decay', default=0.96, type=float)
 parser.add_argument('--n_iter', default=960000, type=int)
 parser.add_argument('--num_class', default=200, type=int)
 parser.add_argument('--start_iter', default=0, type=int)
+parser.add_argument('--full_size', default=False, type=bool)
 
 def model_summary():
     model_vars = tf.trainable_variables()
@@ -44,7 +45,8 @@ def main(args):
     batch_size = args.batch_size
     num_class = args.num_class
     start_iter = args.start_iter
-       
+    full_size = args.full_size    
+
     ## establish training graph
     # inputs placeholder (support and query randomly sampled from two domain)
     inputs = tf.placeholder(tf.float32, shape=[batch_size, img_w, img_h, 3])  
@@ -63,8 +65,8 @@ def main(args):
     model_summary()
 
     # saver for saving session
-    saver = tf.train.Saver(max_to_keep=10)
-    log_path = os.path.join('logs', args.log_path, '_'.join(
+    saver = tf.train.Saver()
+    log_path = os.path.join('/data/wei/model/cross-domain-few-shot/logs', args.log_path, '_'.join(
         (args.test_name, 'lr'+str(lr), 'decay'+str(decay))))
     
     checkpoint_file = log_path + "/checkpoint.ckpt"
@@ -83,11 +85,12 @@ def main(args):
             print("Checkpoint not found: {}".format(checkpoint))
             return False
 
-
-    print("=== Load data...")
     # load mini-imagenet
-    mini = MiniImageNetFull()
-    
+    if full_size:
+        mini = MiniImageNetFull()
+    else:
+        mini = MiniImageNet()
+
     ## training
     with tf.Session() as sess:
 

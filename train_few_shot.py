@@ -40,10 +40,10 @@ parser.add_argument('--multi_domain', default=True, type=bool)
 parser.add_argument('--pretrain', default=True, type=bool)
 parser.add_argument('--fine_tune', default=False, type=bool)
 parser.add_argument('--resume_epoch', default=0, type=int)
-
+parser.add_argument('--full_size', default=False, type=bool)
 
 class Preprocessor(threading.Thread):
-    def __init__(self, id, mini_obj, mini_queue, n_way, n_shot, n_query):
+    def __init__(self, id, mini_obj, mini_queue, n_way, n_shot, n_query, is_full_size=False):
         # for thread
         self.thread_id = id
         self._stop_event = threading.Event()
@@ -51,6 +51,7 @@ class Preprocessor(threading.Thread):
         # for obj
         self.mini_obj = mini_obj
         self.mini_queue = mini_queue
+        self.is_full_size =is_full_size
 
         # for few-shot param.
         self.n_way = n_way
@@ -70,11 +71,15 @@ class Preprocessor(threading.Thread):
         print("n_way = {}".format(self.n_way))
         print("n_shot = {}".format(self.n_shot))
         print("n_query = {}".format(self.n_query))
+        print("full_size = {}".format(self.is_full_size))
 
         while True:
             # for mini
-            mini_sup, mini_qu = self.mini_obj.get_task_from_raw(
-                n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train')
+            if self.is_full_size:
+                mini_sup, mini_qu = self.mini_obj.get_task_from_raw(n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train')
+            else:
+                mini_sup, mini_qu = self.mini_obj.get_task(n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train')
+            
             self.mini_queue.put((mini_sup, mini_qu))
 
             if self.is_stopped():
@@ -92,15 +97,15 @@ def main(args):
     n_shot = args.n_shot
     n_query = args.n_query
     n_query_test = args.n_query_test
-    
+
+    full_size = args.full_size    
     pretrain = args.pretrain
     resume_epoch = args.resume_epoch
     fine_tune = args.fine_tune
     test_iter = args.test_iter
+    
     final_acc = np.empty((test_iter, 2))
 
-    dataset = MiniImageNetFull()
-    
     ## establish training graph
     support_a = tf.placeholder(tf.float32, shape=[n_way, n_shot, None, None, 3])  
     query_b = tf.placeholder(tf.float32, shape=[n_way, None, None, None, 3])
@@ -125,9 +130,9 @@ def main(args):
     model_summary()
 
     # saver for saving session
-    saver = tf.train.Saver(max_to_keep=10)
-    best_saver = tf.train.Saver(max_to_keep=10)
-    log_path = os.path.join('logs', args.log_path,
+    regular_saver = tf.train.Saver()
+    best_saver = tf.train.Saver(max_to_keep=None)
+    log_path = os.path.join('/data/wei/model/cross-domain-few-shot/logs', args.log_path,
                             '_'.join((args.test_name, 'lr'+str(args.lr))))
     
     if fine_tune:
@@ -137,11 +142,13 @@ def main(args):
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
     
     pretrain_log_path = os.path.join(
-        'logs', 'pretrain_baseline', 'backup_full_b16nob_960k')
+        '/data/wei/model/cross-domain-few-shot/logs', 
+        'pretrain_baseline', 
+        'pretrain_baseline_batch_en200_lr0.001_decay0.96') 
     pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_log_path)
-    #pretrain_ckeckpoint = os.path.join(pretrain_log_path, 'checkpoint.ckpt-24000')
-
+    
     best_checkpoint_path = os.path.join(log_path, 'best_performance')
+    best_overall_checkpoint_path = os.path.join(log_path, 'best_performance_overall')
 
     init = [
         tf.global_variables_initializer(),
@@ -174,8 +181,14 @@ def main(args):
             print("Pretrained checkpoint not found: {}".format(checkpoint))
             return False
 
+    # load Mini-ImageNet data
+    if full_size:
+        dataset = MiniImageNetFull()
+    else:
+        dataset = MiniImageNet()
+
     # load CUB data
-    cub = Cub(mode='test')
+    cub = Cub()
 
     # make queue
     mini_queue = queue.Queue(maxsize = 10)
@@ -203,7 +216,7 @@ def main(args):
         print("=== Start training...")
                 
         if lastest_checkpoint:
-            restore_from_checkpoint(sess, saver, lastest_checkpoint)
+            restore_from_checkpoint(sess, regular_saver, lastest_checkpoint)
         elif pretrain:
             print("=== Ckeck pretrained model...")
             print("=== pretrained model path: {}".format(pretrain_log_path))
@@ -213,6 +226,7 @@ def main(args):
         preprocess_time = 0
         train_time = 0
         best_cub_acc = 0
+        best_cub_acc_overall = 0
         for i_iter in range(resume_epoch, args.n_iter):
 
             start = timeit.default_timer()
@@ -247,7 +261,10 @@ def main(args):
                 })
 
                 # get task from validation
-                support, query = dataset.get_task_from_raw(n_way, n_shot, n_query, aug=False, mode='val')
+                if full_size:
+                    support, query = dataset.get_task_from_raw(n_way, n_shot, n_query, aug=False, mode='val')
+                else:
+                    support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='val')
                 summary_val, val_loss, val_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
@@ -257,7 +274,7 @@ def main(args):
                 })
 
                 # get task from unseen domain (CUB)
-                cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test, aug=False)
+                cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test, aug=False, mode='test')
                 summary_test, cub_loss, cub_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: cub_support,
                     query_b: cub_query,
@@ -277,8 +294,15 @@ def main(args):
                 print("==> Preporcess time: ", preprocess_time/(i_iter+1))
                 print("==> Train time: ", train_time/(i_iter+1))
 
-                if (i_iter > 1500) and (fine_tune == True):
-                    # compute accuracy on several randomly generated task from mini-ImageNet and CUB
+                if cub_acc > 0.6 and i_iter > 5000:
+                    if cub_acc > best_cub_acc:
+                        best_cub_acc = cub_acc
+                    ckpt_name = "CUB_acc_" + str(cub_acc) + "_loss_" + str(cub_loss) + ".ckpt" 
+                    best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
+                    print("=== Save checkpoint! Best CUB acc: {}===".format(best_cub_acc))
+
+                if fine_tune == True:
+                    # compute accuracy on 600 randomly generated task from mini-ImageNet and CUB
                     iter_pbar = tqdm(range(test_iter))
                     for i in iter_pbar:
                         # get task from test
@@ -291,7 +315,7 @@ def main(args):
                             is_training: False
                         })
 
-                        cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test)
+                        cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test, aug=False, mode='test')
                         cub_acc = sess.run([model.x_acc], feed_dict={
                             support_a: cub_support,
                             query_b: cub_query,
@@ -309,15 +333,15 @@ def main(args):
                     print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
                     print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))                
 
-                    if mean_acc[1] >= best_cub_acc:
-                        best_cub_acc = mean_acc[1]
-                        ckpt_name = "CUB_acc" + str(best_cub_acc) + "_h" + str(h[1]) + "_Mini_acc" + str(mean_acc[0]) + "_h" + str(h[0]) + ".ckpt" 
-                        best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
+                    if mean_acc[1] >= best_cub_acc_overall:
+                        best_cub_acc_overall = mean_acc[1]
+                        ckpt_name = "CUB_acc" + str(best_cub_acc_overall) + "_h" + str(h[1]) + "_Mini_acc" + str(mean_acc[0]) + "_h" + str(h[0]) + ".ckpt" 
+                        best_saver.save(sess, os.path.join(best_overall_checkpoint_path , ckpt_name), global_step=(i_iter+1))
                         print("=== New record! ===")
             
             # save session every 2000 iteration
             if (i_iter+1) % 2000 == 0:    
-                saver.save(sess, checkpoint_file, global_step=(i_iter+1))
+                regular_saver.save(sess, checkpoint_file, global_step=(i_iter+1))
                 print('Save session at step %d' % (i_iter+1))
         
         pre_thread.stop()
