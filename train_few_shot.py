@@ -14,7 +14,7 @@ import os
 import argparse
 
 # customerized 
-from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
+from src.load_data import Pacs, Cub, Omniglot, MiniImageNet, MiniImageNetFull
 from src.model import PrototypeNet, RelationNet
 
 # miscellaneous
@@ -73,7 +73,8 @@ class Preprocessor(threading.Thread):
 
         while True:
             # for mini
-            mini_sup, mini_qu = self.mini_obj.get_task(n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train', target='all')
+            mini_sup, mini_qu = self.mini_obj.get_task_from_raw(
+                n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train')
             self.mini_queue.put((mini_sup, mini_qu))
 
             if self.is_stopped():
@@ -96,9 +97,9 @@ def main(args):
     resume_epoch = args.resume_epoch
     fine_tune = args.fine_tune
     test_iter = args.test_iter
-    acc = np.empty((test_iter, 2))
+    final_acc = np.empty((test_iter, 2))
 
-    dataset = MiniImageNet()
+    dataset = MiniImageNetFull()
     
     ## establish training graph
     support_a = tf.placeholder(tf.float32, shape=[n_way, n_shot, None, None, 3])  
@@ -124,15 +125,21 @@ def main(args):
     model_summary()
 
     # saver for saving session
-    saver = tf.train.Saver()
+    saver = tf.train.Saver(max_to_keep=10)
+    best_saver = tf.train.Saver(max_to_keep=10)
     log_path = os.path.join('logs', args.log_path,
                             '_'.join((args.test_name, 'lr'+str(args.lr))))
     
-    checkpoint_file = log_path + "/checkpoint.ckpt"
+    if fine_tune:
+        checkpoint_file = log_path + "/checkpoint_fine_tune.ckpt"
+    else:
+        checkpoint_file = log_path + "/checkpoint.ckpt"
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
     
-    pretrain_log_path = os.path.join('logs', 'pretrain_baseline', 'pretrain_baseline_batch_en64_lr0.001_decay0.96') 
+    pretrain_log_path = os.path.join(
+        'logs', 'pretrain_baseline', 'backup_full_b16nob_960k')
     pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_log_path)
+    #pretrain_ckeckpoint = os.path.join(pretrain_log_path, 'checkpoint.ckpt-24000')
 
     best_checkpoint_path = os.path.join(log_path, 'best_performance')
 
@@ -230,7 +237,7 @@ def main(args):
             train_time += (stop - start) 
             
             # evaluation
-            if i_iter % 50 == 0:
+            if i_iter % 100 == 0:
                 summary_train, loss, acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
@@ -240,7 +247,7 @@ def main(args):
                 })
 
                 # get task from validation
-                support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='val')
+                support, query = dataset.get_task_from_raw(n_way, n_shot, n_query, aug=False, mode='val')
                 summary_val, val_loss, val_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
@@ -270,12 +277,12 @@ def main(args):
                 print("==> Preporcess time: ", preprocess_time/(i_iter+1))
                 print("==> Train time: ", train_time/(i_iter+1))
 
-                if fine_tune == True:
-                    # compute accuracy on 600 randomly generated task from mini-ImageNet and CUB
+                if (i_iter > 1500) and (fine_tune == True):
+                    # compute accuracy on several randomly generated task from mini-ImageNet and CUB
                     iter_pbar = tqdm(range(test_iter))
                     for i in iter_pbar:
                         # get task from test
-                        support, query = dataset.get_task(n_way, n_shot, n_query_test, aug=False, mode='test')
+                        support, query = dataset.get_task_from_raw(n_way, n_shot, n_query_test, aug=False, mode='test')
                         val_acc = sess.run([model.x_acc], feed_dict={
                             support_a: support,
                             query_b: query,
@@ -292,11 +299,11 @@ def main(args):
                             n_query_input: n_query_test,
                             is_training: False
                         })
-                        acc[i] = np.concatenate([val_acc, cub_acc])
+                        final_acc[i] = np.concatenate([val_acc, cub_acc])
                     
-                    mean_acc = mean(acc, axis=0)
+                    mean_acc = mean(final_acc, axis=0)
                     confidence = 0.95
-                    std_err = sem(acc)
+                    std_err = sem(final_acc)
                     h = std_err * t.ppf((1 + confidence) / 2, test_iter - 1)
                         
                     print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
@@ -305,7 +312,7 @@ def main(args):
                     if mean_acc[1] >= best_cub_acc:
                         best_cub_acc = mean_acc[1]
                         ckpt_name = "CUB_acc" + str(best_cub_acc) + "_h" + str(h[1]) + "_Mini_acc" + str(mean_acc[0]) + "_h" + str(h[0]) + ".ckpt" 
-                        saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
+                        best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
                         print("=== New record! ===")
             
             # save session every 2000 iteration

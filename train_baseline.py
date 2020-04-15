@@ -24,10 +24,10 @@ import gc
 parser = argparse.ArgumentParser()
 parser.add_argument('--log_path', default='pretrain_baseline', type=str)
 parser.add_argument('--test_name', default='pretrain_mini', type=str)
-parser.add_argument('--batch_size', default=64, type=int)
+parser.add_argument('--batch_size', default=16, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--decay', default=0.96, type=float)
-parser.add_argument('--n_iter', default=240000, type=int)
+parser.add_argument('--n_iter', default=960000, type=int)
 parser.add_argument('--num_class', default=200, type=int)
 parser.add_argument('--start_iter', default=0, type=int)
 
@@ -63,7 +63,7 @@ def main(args):
     model_summary()
 
     # saver for saving session
-    saver = tf.train.Saver()
+    saver = tf.train.Saver(max_to_keep=10)
     log_path = os.path.join('logs', args.log_path, '_'.join(
         (args.test_name, 'lr'+str(lr), 'decay'+str(decay))))
     
@@ -106,7 +106,8 @@ def main(args):
         print("=== Start training...")
         sess.run(init)
         restore_from_checkpoint(sess, saver, lastest_checkpoint)
-        mini_datagen = mini.batch_generator(label_dim=num_class, batch_size=batch_size)
+        #mini_datagen = mini.batch_generator(label_dim=num_class, batch_size=batch_size)
+        mini_datagen = mini.batch_generator_load_all(label_dim=num_class, batch_size=batch_size)
         for i_iter in range(start_iter, args.n_iter):
 
             # mini-imagenet ======================================================================
@@ -125,7 +126,7 @@ def main(args):
             })
 
             # evaluation
-            if i_iter % 50 == 0:
+            if i_iter % 200 == 0:
                 # evaluation
                 summary_train, train_loss, train_acc = \
                     sess.run([train_merged, model.loss, model.acc], 
@@ -154,8 +155,8 @@ def main(args):
                 print('Iteration: %d, Train [%f, %f]' % (i_iter+1, train_loss, train_acc))
                 #print('==> Test: [%f, %f]' % (test_loss, test_acc))
 
-            # save session every 2000 iteration
-            if (i_iter+1) % 2000 == 0:    
+            # save session every 10 epochs
+            if (i_iter+1) % (10 * 600 * 64 / batch_size) == 0:    
                 saver.save(sess, checkpoint_file, global_step=(i_iter+1))
                 print('Save session at step %d' % (i_iter+1))
 
