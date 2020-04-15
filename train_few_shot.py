@@ -42,6 +42,7 @@ parser.add_argument('--fine_tune', default=False, type=bool)
 parser.add_argument('--resume_epoch', default=0, type=int)
 parser.add_argument('--full_size', default=False, type=bool)
 
+
 class Preprocessor(threading.Thread):
     def __init__(self, id, mini_obj, mini_queue, n_way, n_shot, n_query, is_full_size=False):
         # for thread
@@ -100,12 +101,10 @@ def main(args):
 
     full_size = args.full_size    
     pretrain = args.pretrain
+    # fine_tune = args.fine_tune
     resume_epoch = args.resume_epoch
-    fine_tune = args.fine_tune
     test_iter = args.test_iter
     
-    final_acc = np.empty((test_iter, 2))
-
     ## establish training graph
     support_a = tf.placeholder(tf.float32, shape=[n_way, n_shot, None, None, 3])  
     query_b = tf.placeholder(tf.float32, shape=[n_way, None, None, None, 3])
@@ -129,26 +128,21 @@ def main(args):
     
     model_summary()
 
-    # saver for saving session
+    ## saver for saving session
     regular_saver = tf.train.Saver()
     best_saver = tf.train.Saver(max_to_keep=None)
-    log_path = os.path.join('/data/wei/model/cross-domain-few-shot/logs', args.log_path,
-                            '_'.join((args.test_name, 'lr'+str(args.lr))))
-    
-    if fine_tune:
-        checkpoint_file = log_path + "/checkpoint_fine_tune.ckpt"
-    else:
-        checkpoint_file = log_path + "/checkpoint.ckpt"
+
+    ## log and checkpoint
+    wei_path = '/data/wei/model/cross-domain-few-shot/logs'
+    rahul_path = 'logs'
+    log_path = os.path.join(rahul_path, args.log_path, '_'.join((args.test_name, 'lr'+str(args.lr))))
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
-    
-    pretrain_log_path = os.path.join(
-        '/data/wei/model/cross-domain-few-shot/logs', 
-        'pretrain_baseline', 
-        'pretrain_baseline_batch_en200_lr0.001_decay0.96') 
+
+    pretrain_log_path = os.path.join(rahul_path, 'pretrain_baseline', 'backup_full_b16nob_960k')
     pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_log_path)
-    
+
     best_checkpoint_path = os.path.join(log_path, 'best_performance')
-    best_overall_checkpoint_path = os.path.join(log_path, 'best_performance_overall')
+    checkpoint_file = os.path.join(log_path, "checkpoint.ckpt")
 
     init = [
         tf.global_variables_initializer(),
@@ -194,7 +188,7 @@ def main(args):
     mini_queue = queue.Queue(maxsize = 10)
 
     # pass obj to preprocess thread and start
-    pre_thread = Preprocessor(0, dataset, mini_queue, n_way, n_shot, n_query)
+    pre_thread = Preprocessor(0, dataset, mini_queue, n_way, n_shot, n_query, is_full_size=full_size)
     pre_thread.start()
 
     ## training
@@ -202,7 +196,7 @@ def main(args):
         # Creates a file writer for the log directory.
         file_writer_train = tf.summary.FileWriter(os.path.join(log_path, "train"), sess.graph)
         file_writer_val = tf.summary.FileWriter(os.path.join(log_path, "val"), sess.graph)
-        file_writer_test = tf.summary.FileWriter(os.path.join(log_path, "test"), sess.graph)
+        # file_writer_test = tf.summary.FileWriter(os.path.join(log_path, "test"), sess.graph)
 
         # store variables
         s_imgs = tf.summary.image("Support a image", support_a_reshape[:4], max_outputs=4)
@@ -225,8 +219,9 @@ def main(args):
         
         preprocess_time = 0
         train_time = 0
-        best_cub_acc = 0
-        best_cub_acc_overall = 0
+
+        best_val_acc = 0
+        final_acc = np.empty((test_iter, 2))
         for i_iter in range(resume_epoch, args.n_iter):
 
             start = timeit.default_timer()
@@ -273,41 +268,33 @@ def main(args):
                     is_training: False
                 })
 
-                # get task from unseen domain (CUB)
-                cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test, aug=False, mode='test')
-                summary_test, cub_loss, cub_acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
-                    support_a: cub_support,
-                    query_b: cub_query,
-                    labels_input: test_labels,
-                    n_query_input: n_query_test,
-                    is_training: False
-                })
-
                 # log all variables
                 file_writer_train.add_summary(summary_train, global_step=i_iter)
                 file_writer_val.add_summary(summary_val, global_step=i_iter)
-                file_writer_test.add_summary(summary_test, global_step=i_iter)
+                # file_writer_test.add_summary(summary_test, global_step=i_iter)
 
-                print('Iteration: %d, train cost: %g, train acc: %g' % (i_iter+1, loss, acc))
+                print('Iteration: %d' % (i_iter+1))
+                print('train cost: %g, train acc: %g' % (loss, acc))
                 print('eval cost: %g, eval acc: %g' % (val_loss, val_acc))
-                print('CUB cost: %g, CUB acc: %g' % (cub_loss, cub_acc))
+                # print('CUB cost: %g, CUB acc: %g' % (cub_loss, cub_acc))
                 print("==> Preporcess time: ", preprocess_time/(i_iter+1))
                 print("==> Train time: ", train_time/(i_iter+1))
 
-                if cub_acc > 0.6 and i_iter > 5000:
-                    if cub_acc > best_cub_acc:
-                        best_cub_acc = cub_acc
-                    ckpt_name = "CUB_acc_" + str(cub_acc) + "_loss_" + str(cub_loss) + ".ckpt" 
+                if val_acc > 0.65 and val_acc > best_val_acc:
+                    best_val_acc = val_acc
+                    ckpt_name = "val_acc_" + str(val_acc) + "_loss_" + str(val_loss) + ".ckpt"
                     best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
-                    print("=== Save checkpoint! Best CUB acc: {}===".format(best_cub_acc))
-
-                if fine_tune == True:
-                    # compute accuracy on 600 randomly generated task from mini-ImageNet and CUB
+                    print("=== Save checkpoint! Best val acc: {}===".format(best_val_acc))
+                    
+                    # compute accuracy on several randomly generated task from mini-ImageNet and CUB
                     iter_pbar = tqdm(range(test_iter))
                     for i in iter_pbar:
                         # get task from test
-                        support, query = dataset.get_task_from_raw(n_way, n_shot, n_query_test, aug=False, mode='test')
-                        val_acc = sess.run([model.x_acc], feed_dict={
+                        if full_size:
+                            support, query = dataset.get_task_from_raw(n_way, n_shot, n_query_test, aug=False, mode='test')
+                        else:
+                            support, query = dataset.get_task(n_way, n_shot, n_query_test, aug=False, mode='test')
+                        test_acc = sess.run([model.x_acc], feed_dict={
                             support_a: support,
                             query_b: query,
                             labels_input: test_labels,
@@ -323,7 +310,7 @@ def main(args):
                             n_query_input: n_query_test,
                             is_training: False
                         })
-                        final_acc[i] = np.concatenate([val_acc, cub_acc])
+                        final_acc[i] = np.concatenate([test_acc, cub_acc])
                     
                     mean_acc = mean(final_acc, axis=0)
                     confidence = 0.95
@@ -332,12 +319,6 @@ def main(args):
                         
                     print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
                     print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))                
-
-                    if mean_acc[1] >= best_cub_acc_overall:
-                        best_cub_acc_overall = mean_acc[1]
-                        ckpt_name = "CUB_acc" + str(best_cub_acc_overall) + "_h" + str(h[1]) + "_Mini_acc" + str(mean_acc[0]) + "_h" + str(h[0]) + ".ckpt" 
-                        best_saver.save(sess, os.path.join(best_overall_checkpoint_path , ckpt_name), global_step=(i_iter+1))
-                        print("=== New record! ===")
             
             # save session every 2000 iteration
             if (i_iter+1) % 2000 == 0:    
@@ -349,7 +330,7 @@ def main(args):
 
         file_writer_train.close()
         file_writer_val.close()
-        file_writer_test.close()
+        # file_writer_test.close()
 
 
 if __name__ == '__main__':
