@@ -216,62 +216,62 @@ class RelationNet(object):
         with tf.variable_scope("res10_weights", reuse=tf.AUTO_REUSE):
             # conv1
             weights['conv1']    = tf.get_variable('conv1w', [7, 7, 3, 64],  initializer=conv_initializer, dtype=dtype)
-            weights['b1']       = tf.get_variable('conv1b', initializer=tf.zeros([64]))
-            #weights['b1']       = tf.zeros([64])
+            #weights['b1']       = tf.get_variable('conv1b', initializer=tf.zeros([64]))
+            weights['b1']       = tf.zeros([64])
 
             # conv2 - residual_simple_block 
             weights['conv2_1']    = tf.get_variable('conv2w_1', [3, 3, 64, 64],  initializer=conv_initializer, dtype=dtype)
-            weights['b2_1']       = tf.get_variable('conv2b_1', initializer=tf.zeros([64]))
-            #weights['b2_1']       = tf.zeros([64])
+            #weights['b2_1']       = tf.get_variable('conv2b_1', initializer=tf.zeros([64]))
+            weights['b2_1']       = tf.zeros([64])
 
             weights['conv2_2']    = tf.get_variable('conv2w_2', [3, 3, 64, 64],  initializer=conv_initializer, dtype=dtype)
-            weights['b2_2']       = tf.get_variable('conv2b_2', initializer=tf.zeros([64]))             
-            #weights['b2_2']       = tf.zeros([64])
+            #weights['b2_2']       = tf.get_variable('conv2b_2', initializer=tf.zeros([64]))             
+            weights['b2_2']       = tf.zeros([64])
 
             # conv3 - residual_simple_block 
             weights['conv3_1']    = tf.get_variable('conv3w_1', [3, 3, 64, 128],  initializer=conv_initializer, dtype=dtype)
-            weights['b3_1']       = tf.get_variable('conv3b_1', initializer=tf.zeros([128]))
-            #weights['b3_1']       = tf.zeros([128])
+            #weights['b3_1']       = tf.get_variable('conv3b_1', initializer=tf.zeros([128]))
+            weights['b3_1']       = tf.zeros([128])
 
             weights['conv3_2']    = tf.get_variable('conv3w_2', [3, 3, 128, 128],  initializer=conv_initializer, dtype=dtype)
-            weights['b3_2']       = tf.get_variable('conv3b_2', initializer=tf.zeros([128]))
-            #weights['b3_2']       = tf.zeros([128])
+            #weights['b3_2']       = tf.get_variable('conv3b_2', initializer=tf.zeros([128]))
+            weights['b3_2']       = tf.zeros([128])
 
             weights['conv3_sc']    = tf.get_variable('conv3w_sc', [1, 1, 64, 128],  initializer=conv_initializer, dtype=dtype)
-            weights['b3_sc']       = tf.get_variable('conv3b_sc', initializer=tf.zeros([128]))
-            #weights['b3_sc']       = tf.zeros([128])
+            #weights['b3_sc']       = tf.get_variable('conv3b_sc', initializer=tf.zeros([128]))
+            weights['b3_sc']       = tf.zeros([128])
 
             # conv4 - residual_simple_block 
             weights['conv4_1']    = tf.get_variable('conv4w_1', [3, 3, 128, 256],  initializer=conv_initializer, dtype=dtype)
-            weights['b4_1']       = tf.get_variable('conv4b_1', initializer=tf.zeros([256]))
-            #weights['b4_1']       = tf.zeros([256])
+            #weights['b4_1']       = tf.get_variable('conv4b_1', initializer=tf.zeros([256]))
+            weights['b4_1']       = tf.zeros([256])
 
             weights['conv4_2']    = tf.get_variable('conv4w_2', [3, 3, 256, 256],  initializer=conv_initializer, dtype=dtype)
-            weights['b4_2']       = tf.get_variable('conv4b_2', initializer=tf.zeros([256]))
-            #weights['b4_2']       = tf.zeros([256])
+            #weights['b4_2']       = tf.get_variable('conv4b_2', initializer=tf.zeros([256]))
+            weights['b4_2']       = tf.zeros([256])
 
             weights['conv4_sc']    = tf.get_variable('conv4w_sc', [1, 1, 128, 256],  initializer=conv_initializer, dtype=dtype)
-            weights['b4_sc']       = tf.get_variable('conv4b_sc', initializer=tf.zeros([256]))
-            #weights['b4_sc']       = tf.zeros([256])
+            #weights['b4_sc']       = tf.get_variable('conv4b_sc', initializer=tf.zeros([256]))
+            weights['b4_sc']       = tf.zeros([256])
 
             # conv5 - residual_simple_block 
             weights['conv5_1']    = tf.get_variable('conv5w_1', [3, 3, 256, 512],  initializer=conv_initializer, dtype=dtype)
-            weights['b5_1']       = tf.get_variable('conv5b_1', initializer=tf.zeros([512]))
-            #weights['b5_1']       = tf.zeros([512])
+            #weights['b5_1']       = tf.get_variable('conv5b_1', initializer=tf.zeros([512]))
+            weights['b5_1']       = tf.zeros([512])
 
             weights['conv5_2']    = tf.get_variable('conv5w_2', [3, 3, 512, 512],  initializer=conv_initializer, dtype=dtype)
-            weights['b5_2']       = tf.get_variable('conv5b_2', initializer=tf.zeros([512]))
-            #weights['b5_2']       = tf.zeros([512])
+            #weights['b5_2']       = tf.get_variable('conv5b_2', initializer=tf.zeros([512]))
+            weights['b5_2']       = tf.zeros([512])
 
             weights['conv5_sc']    = tf.get_variable('conv5w_sc', [1, 1, 256, 512],  initializer=conv_initializer, dtype=dtype)
-            weights['b5_sc']       = tf.get_variable('conv5b_sc', initializer=tf.zeros([512]))
-            #weights['b5_sc']       = tf.zeros([512])
+            #weights['b5_sc']       = tf.get_variable('conv5b_sc', initializer=tf.zeros([512]))
+            weights['b5_sc']       = tf.zeros([512])
 
             return weights        
 
     def resnet10_classifier(self, inputs, label_dim=64):
         with tf.variable_scope('res10_cls', reuse=tf.AUTO_REUSE):
-            net = fc_layer(inputs, label_dim, name='fc', activat_fn=None) # wei, enlarge the output dimension to 200
+            net = fc_layer(inputs, label_dim, is_bias=False, name='fc', activat_fn=None) # wei, enlarge the output dimension to 200
         return net
 
     def relation_module(self, inputs, loss_type='softmax', is_training=True, reuse=False):

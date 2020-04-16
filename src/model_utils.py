@@ -101,37 +101,8 @@ def max_pool(inputs, kernel_size, strides, padding='VALID', name=None):
     net = tf.nn.max_pool(inputs, ksize=kernel_size, strides=strides, padding=padding, name=name)
     return net
 
-# need to correct
+# need to check dimension and bias
 def fc_layer(inputs, 
-             output_shape,
-             name,
-             initializer=tf.contrib.layers.xavier_initializer(),
-             activat_fn=tf.nn.relu,
-             reg=None):
-    '''
-    Args
-
-    '''
-    with tf.variable_scope(name):
-        shape = inputs.get_shape().as_list()
-        dim = 1
-        for d in shape[1:]:
-            dim *= d
-        net = tf.reshape(inputs, [-1, dim])
-
-        weight = tf.get_variable(
-            "weights", [dim, output_shape], tf.float32, initializer=initializer, regularizer=reg)
-        bias = tf.get_variable(
-            "bias", [output_shape], tf.float32, initializer=tf.zeros_initializer())
-
-        # Note that the '+' operation automatically broadcasts the bias.
-        net = tf.nn.bias_add(tf.matmul(net, weight), bias)
-        if activat_fn is not None:
-            net = activat_fn(net, name=name+"_out")
-        return net
-
-
-def fc_layer_test(inputs, 
                   output_shape,
                   name,
                   is_bias=True,
