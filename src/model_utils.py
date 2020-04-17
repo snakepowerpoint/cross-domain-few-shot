@@ -68,12 +68,12 @@ def batchnorm_conv(inputs, name, momentum=0.1, is_training=tf.cast(True, tf.bool
         beta = tf.get_variable(
             "beta", [channels], tf.float32, initializer=tf.zeros_initializer())
         gamma = tf.get_variable(
-            "gamma", [channels], tf.float32, initializer=tf.random_normal_initializer(1.0, 0.02))
+            "gamma", [channels], tf.float32, initializer=tf.ones_initializer())
 
         pop_mean = tf.get_variable(
             "pop_mean", [channels], tf.float32, initializer=tf.zeros_initializer(), trainable=False)
         pop_variance = tf.get_variable(
-            "pop_variance", [channels], tf.float32, initializer=tf.random_normal_initializer(1.0, 0.02), trainable=False)
+            "pop_variance", [channels], tf.float32, initializer=tf.ones_initializer(), trainable=False)
 
         epsilon = 1e-5
         def batchnorm_train():
@@ -101,14 +101,13 @@ def max_pool(inputs, kernel_size, strides, padding='VALID', name=None):
     net = tf.nn.max_pool(inputs, ksize=kernel_size, strides=strides, padding=padding, name=name)
     return net
 
-# need to check dimension and bias
-def fc_layer(inputs, 
-                  output_shape,
-                  name,
-                  is_bias=True,
-                  initializer=tf.contrib.layers.xavier_initializer(),
-                  activat_fn=tf.nn.relu,
-                  reg=None):
+def fc_layer(inputs,
+             output_shape,
+             name,
+             is_bias=True,
+             initializer=tf.contrib.layers.xavier_initializer(),
+             activat_fn=tf.nn.relu,
+             reg=None):
     '''
     Args
 
