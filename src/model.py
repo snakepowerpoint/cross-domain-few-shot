@@ -437,7 +437,7 @@ class RelationNet(object):
             self.gamma, name="train_op").minimize(self.x_loss, global_step=global_step)
 
     def build_meta(self, n_way, n_shot, n_query, support_x, query_x, support_a, query_b, 
-                   labels, first_lr, regularized=False):
+                   labels, first_lr, beta, regularized=False):
         
         ### build model
         # create network variables
@@ -523,7 +523,7 @@ class RelationNet(object):
         #optimizer = tf.train.AdamOptimizer(self.gamma, name="meta_opt")
         #gvs = optimizer.compute_gradients(self.ab_loss)
         #self.meta_op = optimizer.apply_gradients(gvs)
-        self.total_loss = tf.add(self.x_loss, self.beta * self.ab_loss)
+        self.total_loss = tf.add(self.x_loss, beta * self.ab_loss)
         
         global_step = tf.Variable(0, trainable=False, name='global_step')
         if self.decay is not None:

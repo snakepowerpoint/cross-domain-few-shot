@@ -140,6 +140,7 @@ def main(args):
     support_a = tf.placeholder(tf.float32, shape=[n_way, n_shot, None, None, 3])  
     query_b = tf.placeholder(tf.float32, shape=[n_way, n_query, None, None, 3])
     is_training = tf.placeholder(tf.bool)
+    beta_param = tf.placeholder(tf.float32)
 
     # reshape
     support_x_reshape = tf.reshape(support_x, [n_way * n_shot, img_h, img_w, 3])
@@ -160,7 +161,7 @@ def main(args):
     model.build_meta(n_way, n_shot, n_query,
                      support_x=support_x_reshape, query_x=query_x_reshape, 
                      support_a=support_a_reshape, query_b=query_b_reshape,
-                     labels=labels_input, first_lr=alpha)
+                     labels=labels_input, beta=beta_param, first_lr=alpha)
     
     model_summary()
 
@@ -279,6 +280,14 @@ def main(args):
 
             preprocess_time += (stop - start) 
 
+            # pretrain miniimagenet for 5K
+            if i_iter > 2000:
+                beta = args.beta
+                print("=== Start meta-learning: Beta = [{}]", beta)
+            else:
+                # force beta to be 0 when the iter is under 2k.
+                beta = 0.0
+
             start = timeit.default_timer()
             # training                 
             sess.run([model.meta_op], feed_dict={
@@ -287,6 +296,7 @@ def main(args):
                 support_a: curr_support_a,
                 query_b: curr_query_b,                
                 labels_input: labels,
+                beta_param: beta,
                 is_training: True
             })
             stop = timeit.default_timer()
@@ -303,6 +313,7 @@ def main(args):
                         support_a: curr_support_a,
                         query_b: curr_query_b,
                         labels_input: labels,
+                        beta_param: beta,
                         is_training: False
                     })
                 
@@ -320,6 +331,7 @@ def main(args):
                         support_a: curr_support_a,
                         query_b: curr_query_b,
                         labels_input: labels,
+                        beta_param: beta,
                         is_training: False
                     })
 
@@ -330,6 +342,7 @@ def main(args):
                         support_x: test_support,
                         query_x: test_query,
                         labels_input: labels,
+                        beta_param: beta,
                         is_training: False
                     })
 
