@@ -463,15 +463,19 @@ class MiniImageNetFull(object):
             print(">>> epoch: {}".format(epoch))
             random.shuffle(shuffled_idx)
 
-    def _load_data(self, categories, path_mapping):
+    def _load_data(self, categories, path_mapping):        
+        print("=== Load Full Size Mini-ImageNet...")
         data_dict = {}
-        for category in categories:
+        all_idx_bar = tqdm(range(len(categories)))
+        for idx in all_idx_bar:
+            category = categories[idx]
             num_img = len(path_mapping[category])
             data_dict[category] = list(range(num_img))
             for i in range(num_img):
                 img_path = path_mapping[category][i]
                 s_img = scipy.misc.imread(img_path, mode='RGB').astype(np.uint8)
                 data_dict[category][i] = s_img
+        print(">>> Done.")
         return data_dict
         
     def batch_generator_load_all(self, label_dim=64, batch_size=64, size=(224, 224), aug=True, mode='train'):
