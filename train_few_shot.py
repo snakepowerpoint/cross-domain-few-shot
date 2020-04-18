@@ -15,7 +15,7 @@ import argparse
 
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet, MiniImageNetFull
-from src.model import PrototypeNet, RelationNet
+from src.model import RelationNet
 
 # miscellaneous
 import gc
@@ -121,8 +121,7 @@ def main(args):
     train_labels = np.repeat(np.arange(n_way), repeats=n_query).astype(np.uint8)
     test_labels = np.repeat(np.arange(n_way), repeats=n_query_test).astype(np.uint8)
 
-    model = RelationNet(n_way, n_shot, n_query, n_query_test, gamma=init_lr, 
-                        backbone='resnet', is_training=is_training)
+    model = RelationNet(gamma=init_lr, backbone='resnet', is_training=is_training)
     model.build(n_way, n_shot, n_query=n_query_input, support_x=support_a_reshape, 
                 query_x=query_b_reshape, labels=labels_input, regularized=False)
     
@@ -226,7 +225,6 @@ def main(args):
 
             start = timeit.default_timer()
             # get support and query
-            # support, query = dataset.get_task(n_way, n_shot, n_query, mode='train')
             support, query = mini_queue.get()
             stop = timeit.default_timer()
             

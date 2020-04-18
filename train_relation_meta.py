@@ -16,7 +16,7 @@ import argparse
 # customerized 
 import src.load_data
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
-from src.model import PrototypeNet, RelationNet
+from src.model import RelationNet
 
 # miscellaneous
 import gc
@@ -156,7 +156,7 @@ def main(args):
     print("beta: ", beta)
     print("Second learning rate: ", gamma)
     print("Decay second learning rate: ", decay)
-    model = RelationNet(n_way, n_shot, n_query, alpha=alpha, beta=beta, gamma=gamma, decay=decay,
+    model = RelationNet(alpha=alpha, beta=beta, gamma=gamma, decay=decay,
                         backbone='resnet', is_training=is_training)
     model.build_meta(n_way, n_shot, n_query,
                      support_x=support_x_reshape, query_x=query_x_reshape, 
