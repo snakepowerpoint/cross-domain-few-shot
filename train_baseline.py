@@ -15,7 +15,7 @@ import argparse
 
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet, MiniImageNetFull
-from src.model import PrototypeNet, RelationNet ### use model_local.py
+from src.model import RelationNet  ### use model_local.py
 
 # miscellaneous
 import gc
@@ -26,7 +26,7 @@ parser.add_argument('--log_path', default='pretrain_baseline', type=str)
 parser.add_argument('--test_name', default='pretrain_mini', type=str)
 parser.add_argument('--batch_size', default=16, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
-parser.add_argument('--decay', default=0.96, type=float)
+parser.add_argument('--decay', default=None, type=float)
 parser.add_argument('--n_iter', default=960000, type=int)
 parser.add_argument('--num_class', default=200, type=int)
 parser.add_argument('--start_iter', default=0, type=int)
@@ -48,7 +48,6 @@ def main(args):
     full_size = args.full_size    
 
     ## establish training graph
-    # inputs placeholder (support and query randomly sampled from two domain)
     inputs = tf.placeholder(tf.float32, shape=[batch_size, img_w, img_h, 3])  
     labels = tf.placeholder(tf.float32, shape=[batch_size, num_class])
     learning_rate = tf.placeholder(tf.float32)  
@@ -57,16 +56,17 @@ def main(args):
     # Meta-RelationNet
     print("=== Build model...")
     print("learning rate: ", lr)
-    print("Decay second learning rate: ", decay)
-    model = RelationNet(0, 0, 0, alpha=0, gamma=lr, decay=decay,
-                        backbone='resnet', is_training=is_training)
-    model.train_baseline(inputs=inputs, labels=labels, label_dim=num_class, learning_rate=learning_rate)
+    # print("Decay second learning rate: ", decay)
+    model = RelationNet(alpha=0, gamma=lr, decay=decay, backbone='resnet', is_training=is_training)
+    model.build_baseline(inputs=inputs, labels=labels, learning_rate=learning_rate, label_dim=num_class)
 
     model_summary()
 
     # saver for saving session
     saver = tf.train.Saver()
-    log_path = os.path.join('/data/wei/model/cross-domain-few-shot/logs', args.log_path, '_'.join(
+    wei_path = '/data/wei/model/cross-domain-few-shot/logs'
+    rahul_path = 'logs'
+    log_path = os.path.join(rahul_path, args.log_path, '_'.join(
         (args.test_name, 'lr'+str(lr), 'decay'+str(decay))))
     
     checkpoint_file = log_path + "/checkpoint.ckpt"
@@ -109,8 +109,7 @@ def main(args):
         print("=== Start training...")
         sess.run(init)
         restore_from_checkpoint(sess, saver, lastest_checkpoint)
-        #mini_datagen = mini.batch_generator(label_dim=num_class, batch_size=batch_size)
-        mini_datagen = mini.batch_generator_load_all(label_dim=num_class, batch_size=batch_size)
+        mini_datagen = mini.batch_generator(label_dim=num_class, batch_size=batch_size, aug=True, mode='train')
         for i_iter in range(start_iter, args.n_iter):
 
             # mini-imagenet ======================================================================
@@ -129,7 +128,7 @@ def main(args):
             })
 
             # evaluation
-            if i_iter % 200 == 0:
+            if i_iter % 1000 == 0:
                 # evaluation
                 summary_train, train_loss, train_acc = \
                     sess.run([train_merged, model.loss, model.acc], 
@@ -165,6 +164,7 @@ def main(args):
 
         file_writer_train.close()
         #file_writer_test.close()
+
 
 if __name__ == '__main__':
     args = parser.parse_args()
