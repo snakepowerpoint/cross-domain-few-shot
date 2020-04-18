@@ -331,32 +331,11 @@ class MiniImageNetFull(object):
     def __init__(self):
         self.data_path_base = define_dir_by_mac()
         self.data_path = self.data_path_base + 'cross-domain-few-shot/mini_imagenet_full_size'
-        
+        self.data_dict = self._create_data_dict()
+
         self.train_label_mapping, self.train_img_path_mapping = self._get_label_mapping(mode='train')
         self.val_label_mapping, self.val_img_path_mapping = self._get_label_mapping(mode='val')
-        self.test_label_mapping, self.test_img_path_mapping = self._get_label_mapping(mode='test')
-
-        self.train_image = self._load_train_image()
-
-    def _load_train_image(self):
-        all_categories = sorted(list(self.train_label_mapping.keys()))
-        train_image = {}
-        for category in all_categories:
-            train_image[category] = {}
-
-        print("=== Load Full Size Mini-ImageNet...")
-        all_idx_bar = tqdm(range(600*len(all_categories)))
-        for idx in all_idx_bar:     
-            category = all_categories[idx // 600]
-            img_idx = idx % 600
-
-            selected_img_path = self.train_img_path_mapping[category][img_idx]
-
-            s_img = scipy.misc.imread(selected_img_path, mode='RGB').astype(np.uint8)
-            train_image[category][img_idx] = s_img
-        print(">>> Done.")
-        
-        return train_image
+        self.test_label_mapping, self.test_img_path_mapping = self._get_label_mapping(mode='test')        
 
     def _get_label_mapping(self, mode):
         class_path = os.path.join(self.data_path, mode)
@@ -371,97 +350,12 @@ class MiniImageNetFull(object):
             img_path_mapping[label] = file_paths
         return label_mapping, img_path_mapping
 
-    def get_task_from_raw(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=True, mode='train'):
-        support = np.empty((n_way, n_shot, size[0], size[1], 3))
-        query = np.empty((n_way, n_query, size[0], size[1], 3))
-
-        if mode == 'train':
-            selected_categories = random.sample(list(self.train_label_mapping.keys()), k=n_way)
-            img_path_mapping = self.train_img_path_mapping
-        elif mode == 'val':
-            selected_categories = random.sample(list(self.val_label_mapping.keys()), k=n_way)
-            img_path_mapping = self.val_img_path_mapping
-        elif mode == 'test':
-            selected_categories = random.sample(list(self.test_label_mapping.keys()), k=n_way)
-            img_path_mapping = self.test_img_path_mapping
-        else:
-            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test.')
-
-        if mode == 'train':
-            for i, category in enumerate(selected_categories):
-                selected_idx = random.sample(range(len(img_path_mapping[category])), k=n_shot+n_query)
-
-                for j, idx in enumerate(selected_idx[:n_shot]):
-                    curr_img = self.train_image[category][idx]
-                    support[i][j] = resize_img(curr_img, size=size, aug=aug)
-                
-                for j, idx in enumerate(selected_idx[n_shot:]):
-                    curr_img = self.train_image[category][idx]
-                    query[i][j] = resize_img(curr_img, size=size, aug=aug)
-        else:
-            for i, category in enumerate(selected_categories):
-                selected_imgs_path = random.sample(img_path_mapping[category], k=n_shot+n_query)
-
-                for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
-                    curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
-                    support[i][j] = resize_img(curr_img, size=size, aug=aug)
-                
-                for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
-                    curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
-                    query[i][j] = resize_img(curr_img, size=size, aug=aug)
-
-        return support, query
-
-    def batch_generator(self, label_dim=64, batch_size=64, size=(224, 224), aug=True, mode='train'):
-        if mode == 'train':
-            all_categories = sorted(list(self.train_label_mapping.keys()))
-            img_path_mapping = self.train_img_path_mapping
-            label_mapping = self.train_label_mapping
-        elif mode == 'val':
-            all_categories = sorted(list(self.val_label_mapping.keys()))
-            img_path_mapping = self.val_img_path_mapping
-            label_mapping = self.val_label_mapping
-        elif mode == 'test':
-            all_categories = sorted(list(self.test_label_mapping.keys()))
-            img_path_mapping = self.test_img_path_mapping
-            label_mapping = self.test_label_mapping
-        else: 
-            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test.')
-        
-        curr_batch = np.empty((batch_size, size[0], size[1], 3))
-        curr_label = np.empty((batch_size, label_dim), dtype=np.uint8)
-        img_count = 0
-        epoch = 0
-
-        shuffled_idx = list(range(600*len(all_categories)))
-        random.shuffle(shuffled_idx)
-
-        while True:
-         
-            for idx in shuffled_idx:     
-                category = all_categories[idx // 600]
-                img_idx = idx % 600
-                
-                #selected_img_path = img_path_mapping[category][img_idx]
-                
-                label = np.zeros((1, label_dim))
-                label[0, label_mapping[category]] = 1
-
-                #s_img = scipy.misc.imread(selected_img_path, mode='RGB').astype(np.uint8)
-                s_img = self.train_image[category][img_idx]
-                curr_batch[img_count] = resize_img(s_img, size=size, aug=aug)
-                curr_label[img_count] = label
-                img_count += 1
-
-                if img_count % batch_size == 0 and img_count != 0:        
-                    img_count = 0
-
-                    yield curr_batch, curr_label
-        
-            img_count = 0
-            epoch += 1
-            print(">>> epoch: {}".format(epoch))
-            random.shuffle(shuffled_idx)
+    def _create_data_dict(self):
+        data_dict = {}
+        data_dict['train'] = None
+        data_dict['val'] = None
+        data_dict['test'] = None
+        return data_dict
 
     def _load_data(self, categories, path_mapping):        
         print("=== Load Full Size Mini-ImageNet...")
@@ -477,21 +371,85 @@ class MiniImageNetFull(object):
                 data_dict[category][i] = s_img
         print(">>> Done.")
         return data_dict
-        
-    def batch_generator_load_all(self, label_dim=64, batch_size=64, size=(224, 224), aug=True, mode='train'):
+
+    def load_data(self, mode='train'):
         if mode == 'train':
             all_categories = sorted(list(self.train_label_mapping.keys()))
             img_path_mapping = self.train_img_path_mapping
-            label_mapping = self.train_label_mapping
-            aug = True
         elif mode == 'val':
             all_categories = sorted(list(self.val_label_mapping.keys()))
             img_path_mapping = self.val_img_path_mapping
-            label_mapping = self.val_label_mapping
-            aug = False
         elif mode == 'test':
             all_categories = sorted(list(self.test_label_mapping.keys()))
             img_path_mapping = self.test_img_path_mapping
+        else: 
+            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test.')
+
+        if self.data_dict[mode] is None:
+            self.data_dict[mode] = self._load_data(categories=all_categories, path_mapping=img_path_mapping)
+        else:
+            print('mini-Imagenet-{} has been loaded.'.format(mode))
+
+    def get_task_from_loaded_raw(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=True, mode='train'):
+        selected_categories = random.sample(list(self.data_dict[mode].keys()), k=n_way)
+
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
+
+        for i, category in enumerate(selected_categories):
+            selected_idx = random.sample(range(len(self.data_dict[mode][category])), k=n_shot+n_query)
+
+            for j, idx in enumerate(selected_idx[:n_shot]):
+                curr_img = self.data_dict[mode][category][idx]
+                support[i][j] = resize_img(curr_img, size=size, aug=aug)
+            
+            for j, idx in enumerate(selected_idx[n_shot:]):
+                curr_img = self.data_dict[mode][category][idx]
+                query[i][j] = resize_img(curr_img, size=size, aug=aug)
+        
+        return support, query
+
+    def get_task_from_raw(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=True, mode='train'):
+        if mode == 'train':
+            selected_categories = random.sample(list(self.train_label_mapping.keys()), k=n_way)
+            img_path_mapping = self.train_img_path_mapping
+        elif mode == 'val':
+            selected_categories = random.sample(list(self.val_label_mapping.keys()), k=n_way)
+            img_path_mapping = self.val_img_path_mapping
+        elif mode == 'test':
+            selected_categories = random.sample(list(self.test_label_mapping.keys()), k=n_way)
+            img_path_mapping = self.test_img_path_mapping
+        else:
+            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test.')
+        
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
+
+        for i, category in enumerate(selected_categories):
+            selected_imgs_path = random.sample(img_path_mapping[category], k=n_shot+n_query)
+
+            for j, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                support[i][j] = resize_img(curr_img, size=size, aug=aug)
+            
+            for j, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
+                curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                query[i][j] = resize_img(curr_img, size=size, aug=aug)
+
+        return support, query
+        
+    def batch_generator(self, label_dim=64, batch_size=64, size=(224, 224), aug=True, mode='train'):
+        # load data
+        self.load_data(mode=mode)
+        all_categories = sorted(list(self.data_dict[mode].keys()))
+
+        if mode == 'train':
+            label_mapping = self.train_label_mapping
+            aug = True
+        elif mode == 'val':
+            label_mapping = self.val_label_mapping
+            aug = False
+        elif mode == 'test':
             label_mapping = self.test_label_mapping
             aug = False
         else: 
@@ -502,9 +460,6 @@ class MiniImageNetFull(object):
         img_count = 0
         epoch = 0
 
-        ###
-        data_dict = self._load_data(categories=all_categories, path_mapping=img_path_mapping)
-        
         shuffled_idx = list(range(600*len(all_categories)))
         random.shuffle(shuffled_idx)
 
@@ -516,8 +471,8 @@ class MiniImageNetFull(object):
                 
                 label = np.zeros((1, label_dim))
                 label[0, label_mapping[category]] = 1
-                
-                s_img = data_dict[category][img_idx]
+
+                s_img = self.data_dict[mode][category][img_idx]
                 curr_batch[img_count] = resize_img(s_img, size=size, aug=aug)
                 curr_label[img_count] = label
                 img_count += 1
