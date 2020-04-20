@@ -137,7 +137,7 @@ def main(args):
     log_path = os.path.join(rahul_path, args.log_path, '_'.join((args.test_name, 'lr'+str(args.lr))))
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
 
-    pretrain_log_path = os.path.join(rahul_path, 'pretrain_baseline', 'backup_full_b16nob_960k')
+    pretrain_log_path = os.path.join(rahul_path, 'pretrain_baseline', 'backup_full_b16nob_init_960k')
     pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_log_path)
 
     best_checkpoint_path = os.path.join(log_path, 'best_performance')
