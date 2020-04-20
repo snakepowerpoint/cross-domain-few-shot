@@ -281,12 +281,12 @@ def main(args):
             preprocess_time += (stop - start) 
 
             # pretrain miniimagenet for 5K
-            if i_iter > 2000:
-                beta = args.beta
-                print("=== Start meta-learning: Beta = [{}]", beta)
-            else:
-                # force beta to be 0 when the iter is under 2k.
-                beta = 0.0
+            #if i_iter > 2000:
+            #    beta = args.beta
+            #    print("=== Start meta-learning: Beta = [{}]", beta)
+            #else:
+            #    # force beta to be 0 when the iter is under 2k.
+            #    beta = 0.0
 
             start = timeit.default_timer()
             # training                 
