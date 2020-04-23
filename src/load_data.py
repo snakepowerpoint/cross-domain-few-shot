@@ -612,7 +612,7 @@ def resize_batch_img(imgs, size, aug):
     for i, i_img in enumerate(imgs):
         
         if aug:
-            i_img = augmentation(i_img, size=84)
+            i_img = augmentation(i_img, size=size) # rahul, RandomResizedCrop with size 224
             #resized_img[i] = cv2.resize(i_img, size) # wei, cv2 will change value range
             resized_img[i] = i_img
         else:
@@ -625,7 +625,7 @@ def resize_batch_img(imgs, size, aug):
 def resize_img(img, size, aug): # wei, for process single image       
 
     if aug:
-        resized_img = augmentation(img, size=84)
+        resized_img = augmentation(img, size=size) # rahul, RandomResizedCrop with size 224
     else:
         img = center_crop(img, size=size)
         resized_img = ((img / 255.0) - mean) / std
@@ -655,10 +655,10 @@ def augmentation(img, size):
     _random_resized_crop = RandomResizedCrop(size=size)
     img = _random_resized_crop(img)
     img = jitter(img)
-    img = np.array(img.resize((224, 224))) # wei, use PIL lib to resize here
+    img = np.array(img) # wei, use PIL lib to resize here
     img = random_horizontal_flip(img)
     img = normalize(img)
-    return img
+    return img  # np.array([w,h]) -> [h, w]
 
 
 def center_crop(img, size):
@@ -676,7 +676,7 @@ def center_crop(img, size):
     # Crop the center of the image
     img = img.crop((left, top, right, bottom))
     img = img.resize(size)
-    return np.array(img)
+    return np.array(img)  # np.array([w,h]) -> [h,w]
 
 def define_dir_by_mac():
     interfaces = netifaces.interfaces()
