@@ -91,7 +91,6 @@ def batchnorm_conv(inputs, name, momentum=0.1, is_training=tf.cast(True, tf.bool
         batch_normalized_output = tf.cond(is_training, batchnorm_train, batchnorm_infer)
         return batch_normalized_output
 
-
 def max_pool(inputs, kernel_size, strides, padding='VALID', name=None):
     '''
     Args
@@ -179,3 +178,115 @@ def fc_layer_meta(inputs, weight, bias, name, activat_fn=tf.nn.relu):
         x = activat_fn(x, name=name + "_out")
     
     return x    
+
+def load_weights(sess, pytorch_weights, is_metric=False):
+    '''
+    Args
+        pytorch_weights: dictionary containing weights in a numpy array 
+
+    '''
+    # total parameter = 48
+    graph = sess.graph
+    
+    ## ResNet-10
+    # conv1
+    # tf.assign(graph.get_tensor_by_name('res10_weights/conv1w:0'), pytorch_weights)
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv1w:0'), pytorch_weights['feature.trunk.0.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv1_bn/beta:0'), pytorch_weights['feature.trunk.1.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv1_bn/gamma:0'), pytorch_weights['feature.trunk.1.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv1_bn/pop_mean:0'), pytorch_weights['feature.trunk.1.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv1_bn/pop_variance:0'), pytorch_weights['feature.trunk.1.running_var']))
+
+    # conv2
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv2w_1:0'), pytorch_weights['feature.trunk.4.C1.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv2w_2:0'), pytorch_weights['feature.trunk.4.C2.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv2_1_bn/beta:0'), pytorch_weights['feature.trunk.4.BN1.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv2_1_bn/gamma:0'), pytorch_weights['feature.trunk.4.BN1.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv2_1_bn/pop_mean:0'), pytorch_weights['feature.trunk.4.BN1.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv2_1_bn/pop_variance:0'), pytorch_weights['feature.trunk.4.BN1.running_var']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv2_2_bn/beta:0'), pytorch_weights['feature.trunk.4.BN2.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv2_2_bn/gamma:0'), pytorch_weights['feature.trunk.4.BN2.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv2_2_bn/pop_mean:0'), pytorch_weights['feature.trunk.4.BN2.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv2_2_bn/pop_variance:0'), pytorch_weights['feature.trunk.4.BN2.running_var']))
+
+    # conv3
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv3w_1:0'), pytorch_weights['feature.trunk.5.C1.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv3w_2:0'), pytorch_weights['feature.trunk.5.C2.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv3w_sc:0'), pytorch_weights['feature.trunk.5.shortcut.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_1_bn/beta:0'), pytorch_weights['feature.trunk.5.BN1.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_1_bn/gamma:0'), pytorch_weights['feature.trunk.5.BN1.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_1_bn/pop_mean:0'), pytorch_weights['feature.trunk.5.BN1.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_1_bn/pop_variance:0'), pytorch_weights['feature.trunk.5.BN1.running_var']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_2_bn/beta:0'), pytorch_weights['feature.trunk.5.BN2.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_2_bn/gamma:0'), pytorch_weights['feature.trunk.5.BN2.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_2_bn/pop_mean:0'), pytorch_weights['feature.trunk.5.BN2.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_2_bn/pop_variance:0'), pytorch_weights['feature.trunk.5.BN2.running_var']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_sc_bn/beta:0'), pytorch_weights['feature.trunk.5.BNshortcut.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_sc_bn/gamma:0'), pytorch_weights['feature.trunk.5.BNshortcut.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_sc_bn/pop_mean:0'), pytorch_weights['feature.trunk.5.BNshortcut.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv3_sc_bn/pop_variance:0'), pytorch_weights['feature.trunk.5.BNshortcut.running_var']))
+
+    # conv4
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv4w_1:0'), pytorch_weights['feature.trunk.6.C1.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv4w_2:0'), pytorch_weights['feature.trunk.6.C2.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv4w_sc:0'), pytorch_weights['feature.trunk.6.shortcut.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_1_bn/beta:0'), pytorch_weights['feature.trunk.6.BN1.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_1_bn/gamma:0'), pytorch_weights['feature.trunk.6.BN1.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_1_bn/pop_mean:0'), pytorch_weights['feature.trunk.6.BN1.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_1_bn/pop_variance:0'), pytorch_weights['feature.trunk.6.BN1.running_var']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_2_bn/beta:0'), pytorch_weights['feature.trunk.6.BN2.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_2_bn/gamma:0'), pytorch_weights['feature.trunk.6.BN2.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_2_bn/pop_mean:0'), pytorch_weights['feature.trunk.6.BN2.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_2_bn/pop_variance:0'), pytorch_weights['feature.trunk.6.BN2.running_var']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_sc_bn/beta:0'), pytorch_weights['feature.trunk.6.BNshortcut.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_sc_bn/gamma:0'), pytorch_weights['feature.trunk.6.BNshortcut.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_sc_bn/pop_mean:0'), pytorch_weights['feature.trunk.6.BNshortcut.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv4_sc_bn/pop_variance:0'), pytorch_weights['feature.trunk.6.BNshortcut.running_var']))
+
+    # conv5
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv5w_1:0'), pytorch_weights['feature.trunk.7.C1.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv5w_2:0'), pytorch_weights['feature.trunk.7.C2.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('res10_weights/conv5w_sc:0'), pytorch_weights['feature.trunk.7.shortcut.weight'].transpose(3,2,1,0)))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_1_bn/beta:0'), pytorch_weights['feature.trunk.7.BN1.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_1_bn/gamma:0'), pytorch_weights['feature.trunk.7.BN1.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_1_bn/pop_mean:0'), pytorch_weights['feature.trunk.7.BN1.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_1_bn/pop_variance:0'), pytorch_weights['feature.trunk.7.BN1.running_var']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_2_bn/beta:0'), pytorch_weights['feature.trunk.7.BN2.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_2_bn/gamma:0'), pytorch_weights['feature.trunk.7.BN2.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_2_bn/pop_mean:0'), pytorch_weights['feature.trunk.7.BN2.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_2_bn/pop_variance:0'), pytorch_weights['feature.trunk.7.BN2.running_var']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_sc_bn/beta:0'), pytorch_weights['feature.trunk.7.BNshortcut.bias']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_sc_bn/gamma:0'), pytorch_weights['feature.trunk.7.BNshortcut.weight']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_sc_bn/pop_mean:0'), pytorch_weights['feature.trunk.7.BNshortcut.running_mean']))
+    sess.run(tf.assign(graph.get_tensor_by_name('conv5_sc_bn/pop_variance:0'), pytorch_weights['feature.trunk.7.BNshortcut.running_var']))
+
+    # # classifier
+    # sess.run(tf.assign(graph.get_tensor_by_name(''), pytorch_weights['classifier.weight']))
+    # sess.run(tf.assign(graph.get_tensor_by_name(''), pytorch_weights['classifier.bias'].transpose(1,0)))
+
+    if is_metric:
+        ## RelationNet
+        # conv1
+        sess.run(tf.assign(graph.get_tensor_by_name('relation_mod_weights/conv1w:0'), pytorch_weights['relation_module.layer1.C.weight'].transpose(3,2,1,0)))
+        sess.run(tf.assign(graph.get_tensor_by_name('relation_mod_weights/conv1b:0'), pytorch_weights['relation_module.layer1.C.bias']))
+        sess.run(tf.assign(graph.get_tensor_by_name('M_conv1_bn/beta:0'), pytorch_weights['relation_module.layer1.BN.bias']))
+        sess.run(tf.assign(graph.get_tensor_by_name('M_conv1_bn/gamma:0'), pytorch_weights['relation_module.layer1.BN.weight']))
+        sess.run(tf.assign(graph.get_tensor_by_name('M_conv1_bn/pop_mean:0'), pytorch_weights['relation_module.layer1.trunk.1.bias']))
+        sess.run(tf.assign(graph.get_tensor_by_name('M_conv1_bn/pop_variance:0'), pytorch_weights['relation_module.layer1.trunk.1.weight']))
+
+        # conv2
+        sess.run(tf.assign(graph.get_tensor_by_name('relation_mod_weights/conv2w:0'), pytorch_weights['relation_module.layer2.C.weight'].transpose(3,2,1,0)))
+        sess.run(tf.assign(graph.get_tensor_by_name('relation_mod_weights/conv2b:0'), pytorch_weights['relation_module.layer2.C.bias']))
+        sess.run(tf.assign(graph.get_tensor_by_name('M_conv2_bn/beta:0'), pytorch_weights['relation_module.layer2.BN.bias']))
+        sess.run(tf.assign(graph.get_tensor_by_name('M_conv2_bn/gamma:0'), pytorch_weights['relation_module.layer2.BN.weight']))
+        sess.run(tf.assign(graph.get_tensor_by_name('M_conv2_bn/pop_mean:0'), pytorch_weights['relation_module.layer2.trunk.1.bias']))
+        sess.run(tf.assign(graph.get_tensor_by_name('M_conv2_bn/pop_variance:0'), pytorch_weights['relation_module.layer2.trunk.1.weight']))
+
+        # fc3
+        sess.run(tf.assign(graph.get_tensor_by_name('relation_mod_weights/fc3w:0'), pytorch_weights['relation_module.fc1.weight'].transpose(1,0)))
+        sess.run(tf.assign(graph.get_tensor_by_name('relation_mod_weights/fc3b:0'), pytorch_weights['relation_module.fc1.bias']))
+        
+        # fc4
+        sess.run(tf.assign(graph.get_tensor_by_name('relation_mod_weights/fc4w:0'), pytorch_weights['relation_module.fc2.weight'].transpose(1,0)))
+        sess.run(tf.assign(graph.get_tensor_by_name('relation_mod_weights/fc4b:0'), pytorch_weights['relation_module.fc2.bias']))
+    
