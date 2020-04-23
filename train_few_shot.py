@@ -1,6 +1,7 @@
 # deep learning framework
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
+import torch
 
 # computation
 import numpy as np
@@ -16,6 +17,7 @@ import argparse
 # customerized 
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet, MiniImageNetFull
 from src.model import RelationNet
+from src.model_utils import load_weights
 
 # miscellaneous
 import gc
@@ -35,12 +37,13 @@ parser.add_argument('--n_query', default=16, type=int)
 parser.add_argument('--n_query_test', default=15, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--n_iter', default=40000, type=int)
+parser.add_argument('--resume_epoch', default=0, type=int)
 parser.add_argument('--test_iter', default=200, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
-parser.add_argument('--pretrain', default=True, type=bool)
-parser.add_argument('--fine_tune', default=False, type=bool)
-parser.add_argument('--resume_epoch', default=0, type=int)
 parser.add_argument('--full_size', default=False, type=bool)
+parser.add_argument('--fine_tune', default=False, type=bool)
+parser.add_argument('--pretrain_path', default='logs/pretrain_baseline/backup_full_b16nob_init_960k', type=str)
+parser.add_argument('--source', default='tensorflow', type=str)
 
 
 class Preprocessor(threading.Thread):
@@ -90,6 +93,48 @@ def model_summary():
     model_vars = tf.trainable_variables()
     slim.model_analyzer.analyze_vars(model_vars, print_info=True)
 
+def restore_from_checkpoint(sess, saver, checkpoint):
+    if checkpoint:
+        print("Restore session from checkpoint: {}".format(checkpoint))
+        saver.restore(sess, checkpoint)
+        return True
+    else:
+        print("Checkpoint not found: {}".format(checkpoint))
+        return False
+
+def restore_from_pretrain(sess, checkpoint):
+    if checkpoint:
+        print("Restore pretrained weights from checkpoint: {}".format(checkpoint))
+        var = tf.global_variables()
+        var_to_restore = [val for val in var if (('res10_weights' in val.name) or (
+            'bn' in val.name)) and ('meta_op' not in val.name) and ('M_' not in val.name)]
+
+        print("Pretrained weights:")
+        for _var in var_to_restore:
+            print(_var)
+
+        saver = tf.train.Saver(var_to_restore)
+        saver.restore(sess, checkpoint)
+        return True
+    else:
+        print("Pretrained checkpoint not found: {}".format(checkpoint))
+        return False
+
+
+def load_pytorch_weights(sess, weight_path):
+    if weight_path:
+        print("Load pytorch weights from: {}".format(weight_path))
+        tmp = torch.load(weight_path)
+        pytorch_weights = {}
+        for key, value in tmp['state'].items():
+            weights = torch.Tensor.cpu(value)
+            pytorch_weights[key] = weights.data.numpy()
+
+        load_weights(sess, pytorch_weights)
+        print("===Done===")
+    else:
+        print('Pytorch weights are not found')
+
 def main(args):
     img_w = 224  # 84 or 224
     img_h = 224
@@ -98,13 +143,14 @@ def main(args):
     n_shot = args.n_shot
     n_query = args.n_query
     n_query_test = args.n_query_test
-
-    full_size = args.full_size    
-    pretrain = args.pretrain
-    # fine_tune = args.fine_tune
-    resume_epoch = args.resume_epoch
     test_iter = args.test_iter
+    resume_epoch = args.resume_epoch
     
+    full_size = args.full_size    
+    # fine_tune = args.fine_tune
+    pretrain_path = args.pretrain_path
+    source = args.source
+
     ## establish training graph
     support_a = tf.placeholder(tf.float32, shape=[n_way, n_shot, None, None, 3])  
     query_b = tf.placeholder(tf.float32, shape=[n_way, None, None, None, 3])
@@ -132,49 +178,20 @@ def main(args):
     best_saver = tf.train.Saver(max_to_keep=None)
 
     ## log and checkpoint
-    wei_path = '/data/wei/model/cross-domain-few-shot/logs'
+    # wei_path = '/data/wei/model/cross-domain-few-shot/logs'
     rahul_path = 'logs'
     log_path = os.path.join(rahul_path, args.log_path, '_'.join((args.test_name, 'lr'+str(args.lr))))
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
-
-    pretrain_log_path = os.path.join(rahul_path, 'pretrain_baseline', 'backup_full_b16nob_init_960k')
-    pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_log_path)
-
+    
+    regular_checkpoint_file = os.path.join(log_path, "checkpoint.ckpt")
     best_checkpoint_path = os.path.join(log_path, 'best_performance')
-    checkpoint_file = os.path.join(log_path, "checkpoint.ckpt")
 
-    init = [
-        tf.global_variables_initializer(),
-        tf.local_variables_initializer()
-    ]
+    ## pre-train weights
+    pytorch_weight_path = '/data/rahul/workspace/cross-domain-few-shot/cross-domain-few-shot/model/baseline/399.tar'  # or best_model.tar
+    # pytorch_weight_path = '/data/rahul/workspace/cross-domain-few-shot/CrossDomainFewShot/output/checkpoints/mini_Cub/best_model.tar'  # or best_model.tar
 
-    def restore_from_checkpoint(sess, saver, checkpoint):
-        if checkpoint:
-            print("Restore session from checkpoint: {}".format(checkpoint))
-            saver.restore(sess, checkpoint)
-            return True
-        else:
-            print("Checkpoint not found: {}".format(checkpoint))
-            return False
-
-    def restore_from_pretrain(sess, checkpoint):
-        if checkpoint:
-            print("Restore pretrained weights from checkpoint: {}".format(checkpoint))
-            var = tf.global_variables()
-            var_to_restore = [val for val in var if (('res10_weights' in val.name) or ('bn' in val.name)) and ('meta_op' not in val.name) and ('M_' not in val.name)]
-
-            print("Pretrained weights:")
-            for _var in var_to_restore:
-                print(_var)
-
-            saver = tf.train.Saver(var_to_restore)
-            saver.restore(sess, checkpoint)
-            return True
-        else:
-            print("Pretrained checkpoint not found: {}".format(checkpoint))
-            return False
-
-    # load Mini-ImageNet data
+    ## load data
+    # load Mini-ImageNet
     if full_size:
         dataset = MiniImageNetFull()
     else:
@@ -190,6 +207,10 @@ def main(args):
     pre_thread = Preprocessor(0, dataset, mini_queue, n_way, n_shot, n_query, is_full_size=full_size)
     pre_thread.start()
 
+    init = [
+        tf.global_variables_initializer(),
+        tf.local_variables_initializer()
+    ]
     ## training
     with tf.Session() as sess:
         # Creates a file writer for the log directory.
@@ -207,15 +228,29 @@ def main(args):
         
         sess.run(init)
         print("=== Start training...")
-                
+        print("=== Ckeck pre-trained backbone model...")
+        if source == 'tensorflow':
+            pretrain_ckeckpoint = tf.train.latest_checkpoint(pretrain_path)
+            if pretrain_ckeckpoint:
+                restore_from_pretrain(sess, pretrain_ckeckpoint)
+            else:
+                print("Can not find the tensorfow pre-trained weights!")
+        elif source == 'pytorch':
+            if pytorch_weight_path:
+                load_pytorch_weights(sess, pytorch_weight_path)
+            else:
+                print("Can not find the pytorch pre-trained weights!")
+        else:
+            print("Can not find the pre-trained backbone weights.")
+        
+        print("=== Ckeck last checkpoint model...")
         if lastest_checkpoint:
             restore_from_checkpoint(sess, regular_saver, lastest_checkpoint)
-        elif pretrain:
-            print("=== Ckeck pretrained model...")
-            print("=== pretrained model path: {}".format(pretrain_log_path))
-            print(pretrain_ckeckpoint)            
-            restore_from_pretrain(sess, pretrain_ckeckpoint)
-        
+        else:
+            print("Train from {} step".format(resume_epoch))
+        # tensorflow_checkpoint = tf.train.latest_checkpoint(weight_path)
+        # restore_from_checkpoint(sess, regular_saver, tensorflow_checkpoint)
+    
         preprocess_time = 0
         train_time = 0
 
@@ -278,12 +313,7 @@ def main(args):
                 print("==> Preporcess time: ", preprocess_time/(i_iter+1))
                 print("==> Train time: ", train_time/(i_iter+1))
 
-                if val_acc > 0.65 and val_acc > best_val_acc:
-                    best_val_acc = val_acc
-                    ckpt_name = "val_acc_" + str(val_acc) + "_loss_" + str(val_loss) + ".ckpt"
-                    best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
-                    print("=== Save checkpoint! Best val acc: {}===".format(best_val_acc))
-                    
+                if val_acc > 0.8:
                     # compute accuracy on several randomly generated task from mini-ImageNet and CUB
                     iter_pbar = tqdm(range(test_iter))
                     for i in iter_pbar:
@@ -316,11 +346,23 @@ def main(args):
                     h = std_err * t.ppf((1 + confidence) / 2, test_iter - 1)
                         
                     print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
-                    print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))                
-            
+                    print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))
+
+                    # save checkpoint
+                    ckpt_name = "val_acc_" + str(val_acc) + "_loss_" + str(np.round(val_loss, 4)) + \
+                        "_mini_" + str(np.round(mean_acc[0], 4)) + "_cub_" + str(np.round(mean_acc[1], 4)) + ".ckpt"
+                    best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
+                    
+                    # save best checkpoint
+                    if val_acc > best_val_acc:
+                        best_val_acc = val_acc
+                        ckpt_name = "val_acc_" + str(val_acc) + "_loss_" + str(np.round(val_loss, 4)) + ".ckpt"
+                        best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
+                        print("=== Save checkpoint! Best val acc: {}===".format(best_val_acc))
+                                    
             # save session every 2000 iteration
             if (i_iter+1) % 2000 == 0:    
-                regular_saver.save(sess, checkpoint_file, global_step=(i_iter+1))
+                regular_saver.save(sess, regular_checkpoint_file, global_step=(i_iter+1))
                 print('Save session at step %d' % (i_iter+1))
         
         pre_thread.stop()
