@@ -603,8 +603,8 @@ class RelationNet(object):
         self.maml_test_loss = self.ce_loss(y_pred=relations, y_true=one_hot_labels)
         self.maml_test_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations, axis=-1), labels)))
 
-    def train_baseline(self, inputs, labels, learning_rate, label_dim=64, regularized=False):
-        
+    def build_baseline(self, inputs, labels, learning_rate, label_dim=64, regularized=False):
+               
         ### build model
         # create network variables
         self.res10_weights = res10_weights = self.resnet10_encoder_weights()
@@ -624,3 +624,42 @@ class RelationNet(object):
         global_step = tf.Variable(0, trainable=False, name='global_step')
         self.train_op = tf.train.AdamOptimizer(
             learning_rate, name="train_op").minimize(self.loss, global_step=global_step)
+
+    def build_test(self, n_way, n_shot, n_query, support_x, query_x, labels, regularized=False):
+        
+        ### build model
+        # create network variables
+        self.res10_weights = res10_weights = self.resnet10_encoder_weights()
+        self.relation_weights = relation_weights = self.relation_module_weights()
+
+        # create labels
+        one_hot_labels = tf.one_hot(labels, depth=n_way)  # [75, 5]
+
+        # build res10 network - for support & query x =================================================================================      
+        support_x_encode = self.resnet10_encoder_meta(support_x, res10_weights, is_training=self.is_training)
+
+        h, w, c = support_x_encode.get_shape().as_list()[1:]
+        support_x_encode = tf.reduce_mean(tf.reshape(support_x_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_x_encode = tf.tile(tf.expand_dims(support_x_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
+
+        query_x_encode = self.resnet10_encoder_meta(query_x, res10_weights, is_training=self.is_training)
+        
+        query_x_encode = tf.tile(tf.expand_dims(query_x_encode, axis=0), [n_way, 1, 1, 1, 1])
+        query_x_encode = tf.transpose(query_x_encode, perm=[1, 0, 2, 3, 4])
+
+        relation_x_pairs = tf.concat([support_x_encode, query_x_encode], -1)
+        relation_x_pairs = tf.reshape(relation_x_pairs, shape=[-1, h, w, c*2])
+
+        # build relation network - for support & query x 
+        relations_x = self.relation_module_meta(relation_x_pairs, relation_weights, is_training=self.is_training)  # [75*5, 1]
+        relations_x = tf.reshape(relations_x, [-1, n_way])  # [75, 5]
+        
+        # x loss & acc
+        self.x_loss = self.ce_loss(y_pred=relations_x, y_true=one_hot_labels)
+        self.x_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations_x, axis=-1), labels)))
+
+        # l2 reg
+        if regularized:
+            train_vars = tf.trainable_variables()
+            l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in train_vars if 'conv' in v.name]) * 1e-8
+            self.x_loss = tf.add(self.x_loss, l2_loss)
