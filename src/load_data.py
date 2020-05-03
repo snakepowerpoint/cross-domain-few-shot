@@ -263,15 +263,15 @@ class Pacs(object):
                 q_imgs = self.data_dict[mode][domain][category][selected_imgs[n_shot:]]
                 support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
                 query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
-
+            
             elif target == 'support':
                 s_imgs = self.data_dict[mode][domain][category][selected_imgs[:n_shot]]
-                support[i] = resize_batch_img(s_imgs, size=size, aug=aug)
+                support[i] = resize_batch_img(s_imgs, size=size, aug=aug)   
 
             elif target == 'query':
                 q_imgs = self.data_dict[mode][domain][category][selected_imgs[n_shot:]]
                 query[i] = resize_batch_img(q_imgs, size=size, aug=aug)
-
+                
         return support, query
 
 
@@ -437,7 +437,78 @@ class MiniImageNetFull(object):
                 query[i][j] = resize_img(curr_img, size=size, aug=aug)
 
         return support, query
+    
+    def task_generator_raw(self, n_way=5, n_shot=5, n_query=16, size=(224, 224), aug=True, mode='train'):
+        if mode == 'train':
+            img_path_mapping = self.train_img_path_mapping
+            aug = True
+        elif mode == 'val':
+            img_path_mapping = self.val_img_path_mapping
+            aug = False
+        elif mode == 'test':
+            img_path_mapping = self.test_img_path_mapping
+            aug = False
+        else: 
+            raise ValueError('Unknown mode! Please specify mode as either one of train/val/test.')
+
+        # load data
+        # self.load_data(mode=mode)
+        # all_categories = sorted(list(self.data_dict[mode].keys()))
+        all_categories = sorted(list(img_path_mapping.keys()))
+
+        def shuffle_img_index(num_category, num_img):
+            all_img_index = list(range(num_category * num_img))
+            for i in range(num_category):
+                img_index = list(range(num_img))
+                # img_index = list(range(i*num_img, (i+1)*num_img))
+                random.shuffle(img_index)
+                all_img_index[i*num_img: (i+1)*num_img] = img_index
+            return all_img_index
+
+        num_category = len(all_categories)  # e.g. 64
+        shuffled_idx = shuffle_img_index(num_category=num_category, num_img=600)
+
+        support = np.empty((n_way, n_shot, size[0], size[1], 3))
+        query = np.empty((n_way, n_query, size[0], size[1], 3))
         
+        epoch = 0
+        num_task = int(num_category * 600 / (n_way * (n_shot + n_query)))
+        while True:
+            n_round = 0
+            for i in range(num_task):
+                task = {}
+                cat_start_idx = i * n_way % num_category
+                for j in range(cat_start_idx, cat_start_idx + n_way):
+                    if j >= num_category:
+                        n_round = n_round + 1
+                        new_j = j % num_category
+                        category = all_categories[new_j]
+                        start_idx = 600 * new_j + n_round * (n_shot + n_query)
+                        task[category] = shuffled_idx[start_idx: (start_idx + n_shot + n_query)]
+
+                    else:
+                        category = all_categories[j]
+                        start_idx = 600 * j + n_round * (n_shot + n_query)
+                        task[category] = shuffled_idx[start_idx: (start_idx + n_shot + n_query)]
+                
+                for j, category in enumerate(task):
+                    selected_imgs_path = [img_path_mapping[category][x] for x in task[category]]
+                    
+                    for k, curr_img_path in enumerate(selected_imgs_path[:n_shot]):
+                        curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                        support[j][k] = resize_img(curr_img, size=size, aug=aug)
+                
+                    for k, curr_img_path in enumerate(selected_imgs_path[n_shot:]):
+                        curr_img = scipy.misc.imread(curr_img_path, mode='RGB').astype(np.uint8)
+                        query[j][k] = resize_img(curr_img, size=size, aug=aug)
+
+                yield support, query
+
+            epoch += 1
+            print(">>> epoch: {}".format(epoch))
+            shuffled_idx = shuffle_img_index(num_category=num_category, num_img=600)
+            random.shuffle(all_categories)
+
     def batch_generator(self, label_dim=64, batch_size=64, size=(224, 224), aug=True, mode='train'):
         # load data
         self.load_data(mode=mode)
