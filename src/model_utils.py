@@ -61,6 +61,7 @@ def convolution_layer(inputs,
     return net
 
 def batchnorm_conv(inputs, name, momentum=0.1, is_training=tf.cast(True, tf.bool)):
+    is_training = tf.cast(is_training, tf.bool)
     with tf.variable_scope(name+"_bn", reuse=tf.AUTO_REUSE):
         inputs = tf.identity(inputs)
         channels = inputs.get_shape()[3]

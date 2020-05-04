@@ -154,15 +154,15 @@ class RelationNet(object):
         with tf.variable_scope('relation_mod_weights', reuse=tf.AUTO_REUSE):
             weights['conv1']    = tf.get_variable('conv1w', [3, 3, 1024, 512],  initializer=conv_initializer, dtype=dtype)
             weights['b1']       = tf.get_variable('conv1b', initializer=tf.zeros([512]))
-
+ 
             weights['conv2']    = tf.get_variable('conv2w', [3, 3, 512, 512],  initializer=conv_initializer, dtype=dtype)
             weights['b2']       = tf.get_variable('conv2b', initializer=tf.zeros([512]))
             
             weights['fc3']      = tf.get_variable('fc3w', [512, 8], initializer=fc_initializer, dtype=dtype)
             weights['b3']       = tf.get_variable('fc3b', initializer=tf.zeros([8]))            
-
+ 
             weights['fc4']      = tf.get_variable('fc4w', [8, 1], initializer=fc_initializer, dtype=dtype)
-            weights['b4']       = tf.get_variable('fc4b', initializer=tf.zeros([1]))            
+            weights['b4']       = tf.get_variable('fc4b', initializer=tf.zeros([1])) 
 
             return weights
 
@@ -314,8 +314,16 @@ class RelationNet(object):
         self.meta_op = tf.train.AdamOptimizer(
             self.gamma, name="meta_opt").minimize(self.total_loss, global_step=global_step)
 
-    def build_maml(self, n_way, n_shot, n_query, support_x, query_x, support_a, query_b, labels, first_lr):
+    def build_maml(self, n_way, n_shot, n_query, support_x, query_x, support_a, query_b, labels, first_lr, multi_tasks=False):
         
+        img_h, img_w = support_x.get_shape()[2], support_x.get_shape()[3]
+        #num_domains = support_a.get_shape()[0]
+
+        support_x = tf.reshape(support_x, [n_way * n_shot, img_h, img_w, 3])
+        query_x = tf.reshape(query_x, [n_way * n_query, img_h, img_w, 3])
+        support_a = tf.reshape(support_a, [-1, n_way * n_shot, img_h, img_w, 3])
+        query_b = tf.reshape(query_b, [-1, n_way * n_query, img_h, img_w, 3])
+
         ### build model
         # create network variables
         self.res10_weights = res10_weights = self.resnet10_encoder_weights()
@@ -362,29 +370,37 @@ class RelationNet(object):
                                         [relation_weights[key] - first_lr * relation_gvs[key] for key in relation_weights.keys()]))
 
         # use theta_pi to forward meta-test - for support a & query b =================================================================
-        support_a_encode = self.resnet10_encoder_meta(support_a, fast_res10_weights, is_training=self.is_training)
+        self.ab_loss, self.ab_acc = [], []   
+        if multi_tasks and self.is_training:
+            num_domains = 3
+        else:
+            num_domains = 1
+        for i in range(num_domains):
+            support_a_encode = self.resnet10_encoder_meta(support_a[i], fast_res10_weights, is_training=self.is_training)
 
-        h, w, c = support_a_encode.get_shape().as_list()[1:]
-        support_a_encode = tf.reduce_mean(tf.reshape(support_a_encode, [n_way, n_shot, h, w, c]), axis=1)
-        support_a_encode = tf.tile(tf.expand_dims(support_a_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
+            h, w, c = support_a_encode.get_shape().as_list()[1:]
+            support_a_encode = tf.reduce_mean(tf.reshape(support_a_encode, [n_way, n_shot, h, w, c]), axis=1)
+            support_a_encode = tf.tile(tf.expand_dims(support_a_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
 
-        query_b_encode = self.resnet10_encoder_meta(query_b, fast_res10_weights, is_training=self.is_training)
-        
-        query_b_encode = tf.tile(tf.expand_dims(query_b_encode, axis=0), [n_way, 1, 1, 1, 1])
-        query_b_encode = tf.transpose(query_b_encode, perm=[1, 0, 2, 3, 4])
+            query_b_encode = self.resnet10_encoder_meta(query_b[i], fast_res10_weights, is_training=self.is_training)
+            
+            query_b_encode = tf.tile(tf.expand_dims(query_b_encode, axis=0), [n_way, 1, 1, 1, 1])
+            query_b_encode = tf.transpose(query_b_encode, perm=[1, 0, 2, 3, 4])
 
-        relation_ab_pairs = tf.concat([support_a_encode, query_b_encode], -1)
-        relation_ab_pairs = tf.reshape(relation_ab_pairs, shape=[-1, h, w, c*2])        
+            relation_ab_pairs = tf.concat([support_a_encode, query_b_encode], -1)
+            relation_ab_pairs = tf.reshape(relation_ab_pairs, shape=[-1, h, w, c*2])        
 
-        # build relation network - for support a & query b
-        relations_ab = self.relation_module_meta(relation_ab_pairs, fast_relation_weights, is_training=self.is_training)  # [75*5, 1]
-        relations_ab = tf.reshape(relations_ab, [-1, n_way])  # [75, 5]
+            # build relation network - for support a & query b
+            relations_ab = self.relation_module_meta(relation_ab_pairs, fast_relation_weights, is_training=self.is_training)  # [75*5, 1]
+            relations_ab = tf.reshape(relations_ab, [-1, n_way])  # [75, 5]
 
-        # ab loss & acc
-        self.ab_loss = self.ce_loss(y_pred=relations_ab, y_true=one_hot_labels)
-        self.ab_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations_ab, axis=-1), labels)))
+            # ab loss & acc
+            self.ab_loss.append(self.ce_loss(y_pred=relations_ab, y_true=one_hot_labels))
+            self.ab_acc.append(tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations_ab, axis=-1), labels))))
 
-        self.total_loss = self.ab_loss
+        self.ab_loss = tf.reduce_mean(self.ab_loss)
+        self.ab_acc = tf.reduce_mean(self.ab_acc)
+        self.total_loss = self.x_loss + self.beta * self.ab_loss
         
         global_step = tf.Variable(0, trainable=False, name='global_step')
         if self.decay is not None:
@@ -392,8 +408,15 @@ class RelationNet(object):
         self.meta_op = tf.train.AdamOptimizer(
             self.gamma, name="meta_opt").minimize(self.total_loss, global_step=global_step)
 
-    def build_maml_test(self, n_way, n_shot, n_query, train_support, train_query, test_support, test_query, labels, first_lr):
-        
+    def build_maml_val(self, n_way, n_shot, n_query, train_support, train_query, test_support, test_query, labels, first_lr):
+
+        img_h, img_w = train_support.get_shape()[2], train_support.get_shape()[3]
+
+        train_support = tf.reshape(train_support, [n_way * n_shot, img_h, img_w, 3])
+        train_query = tf.reshape(train_query, [n_way * n_query, img_h, img_w, 3])
+        test_support = tf.reshape(test_support, [n_way * n_shot, img_h, img_w, 3])
+        test_query = tf.reshape(test_query, [n_way * n_query, img_h, img_w, 3])
+
         ### build model
         # create network variables
         res10_weights = self.resnet10_encoder_weights()
@@ -503,8 +526,88 @@ class RelationNet(object):
         self.maml_test_loss = self.ce_loss(y_pred=relations, y_true=one_hot_labels)
         self.maml_test_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations, axis=-1), labels)))
 
-    def build_baseline(self, inputs, labels, learning_rate, label_dim=64, regularized=False):
+    def build_maml_test_train(self, n_way, n_shot, n_query, train_support, train_query, labels, first_lr):
+
+        img_h, img_w = train_support.get_shape()[2], train_support.get_shape()[3]
+
+        train_support = tf.reshape(train_support, [n_way * n_shot, img_h, img_w, 3])
+        train_query = tf.reshape(train_query, [n_way * n_query, img_h, img_w, 3])
+
+        ### build model
+        # create network variables
+        res10_weights = self.resnet10_encoder_weights()
+        relation_weights = self.relation_module_weights()
+
+        # create labels
+        one_hot_labels = tf.one_hot(labels, depth=n_way)  # [75, 5]
         
+        # Use theta from mini to start =================================================================================     
+        support_encode = self.resnet10_encoder_meta(train_support, res10_weights, is_training=self.is_training)
+
+        h, w, c = support_encode.get_shape().as_list()[1:]
+        support_encode = tf.reduce_mean(tf.reshape(support_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_encode = tf.tile(tf.expand_dims(support_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
+
+        query_encode = self.resnet10_encoder_meta(train_query, res10_weights, is_training=self.is_training)
+        
+        query_encode = tf.tile(tf.expand_dims(query_encode, axis=0), [n_way, 1, 1, 1, 1])
+        query_encode = tf.transpose(query_encode, perm=[1, 0, 2, 3, 4])
+
+        relation_pairs = tf.concat([support_encode, query_encode], -1)
+        relation_pairs = tf.reshape(relation_pairs, shape=[-1, h, w, c*2])
+
+        # build relation network 
+        relations = self.relation_module_meta(relation_pairs, relation_weights, is_training=self.is_training)  # [75*5, 1]
+        relations = tf.reshape(relations, [-1, n_way])  # [75, 5]
+        
+        # maml train loss & acc
+        self.maml_train_loss = self.ce_loss(y_pred=relations, y_true=one_hot_labels)
+        self.maml_train_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations, axis=-1), labels)))
+        
+        global_step = tf.Variable(0, trainable=False, name='global_step')
+        self.meta_op = tf.train.AdamOptimizer(
+            self.alpha, name="meta_opt").minimize(self.maml_train_loss, global_step=global_step)
+
+    def build_maml_test_inference(self, n_way, n_shot, n_query, test_support, test_query, labels):
+
+        img_h, img_w = test_support.get_shape()[2], test_support.get_shape()[3]
+
+        test_support = tf.reshape(test_support, [n_way * n_shot, img_h, img_w, 3])
+        test_query = tf.reshape(test_query, [n_way * n_query, img_h, img_w, 3])
+
+        # create network variables
+        res10_weights = self.resnet10_encoder_weights()
+        relation_weights = self.relation_module_weights()
+
+        # create labels
+        one_hot_labels = tf.one_hot(labels, depth=n_way)  # [75, 5]
+
+        # Evaluate the test acc by test data
+        # use theta_pi to forward meta-test
+        support_encode = self.resnet10_encoder_meta(test_support, res10_weights, is_training=self.is_training)
+
+        h, w, c = support_encode.get_shape().as_list()[1:]
+        support_encode = tf.reduce_mean(tf.reshape(support_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_encode = tf.tile(tf.expand_dims(support_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
+
+        query_encode = self.resnet10_encoder_meta(test_query, res10_weights, is_training=self.is_training)
+        
+        query_encode = tf.tile(tf.expand_dims(query_encode, axis=0), [n_way, 1, 1, 1, 1])
+        query_encode = tf.transpose(query_encode, perm=[1, 0, 2, 3, 4])
+
+        relation_pairs = tf.concat([support_encode, query_encode], -1)
+        relation_pairs = tf.reshape(relation_pairs, shape=[-1, h, w, c*2])        
+
+        # build relation network 
+        relations = self.relation_module_meta(relation_pairs, relation_weights, is_training=self.is_training)  # [75*5, 1]
+        relations = tf.reshape(relations, [-1, n_way])  # [75, 5]
+
+        # maml test loss & acc
+        self.maml_test_loss = self.ce_loss(y_pred=relations, y_true=one_hot_labels)
+        self.maml_test_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations, axis=-1), labels)))
+
+    def build_baseline(self, inputs, labels, learning_rate, label_dim=64, regularized=False):
+               
         ### build model
         # create network variables
         self.res10_weights = res10_weights = self.resnet10_encoder_weights()
