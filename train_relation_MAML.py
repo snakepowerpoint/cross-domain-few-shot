@@ -163,7 +163,7 @@ def main(args):
     print("Second learning rate: ", gamma)
     print("Decay second learning rate: ", decay)
     print("Load pretrained ResNet10: ", pretrain)
-    model = RelationNet(n_way, n_shot, n_query, alpha=alpha, beta=0, gamma=gamma, decay=decay,
+    model = RelationNet(alpha=alpha, beta=0, gamma=gamma, decay=decay,
                         backbone='resnet', is_training=is_training)
     model.build_maml(n_way, n_shot, n_query,
                      support_x=support_x_reshape, query_x=query_x_reshape, 
