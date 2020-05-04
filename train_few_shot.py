@@ -37,12 +37,14 @@ parser.add_argument('--n_query', default=16, type=int)
 parser.add_argument('--n_query_test', default=15, type=int)
 parser.add_argument('--lr', default=1e-3, type=float)
 parser.add_argument('--n_iter', default=40000, type=int)
+parser.add_argument('--n_episode', default=100, type=int)
 parser.add_argument('--resume_epoch', default=0, type=int)
 parser.add_argument('--test_iter', default=200, type=int)
 parser.add_argument('--multi_domain', default=True, type=bool)
 parser.add_argument('--full_size', default=False, type=bool)
 parser.add_argument('--fine_tune', default=False, type=bool)
-parser.add_argument('--pretrain_path', default='logs/pretrain_baseline/backup_full_b16nob_init_960k', type=str)
+# parser.add_argument('--pretrain_path', default='logs/pretrain_baseline/backup_full_b16nob_init_960k', type=str)
+parser.add_argument('--pretrain_path', default='logs/pretrain_baseline/pretrain_baseline_batch_en64_lr0.001_decay0.96', type=str)
 parser.add_argument('--source', default='tensorflow', type=str)
 
 
@@ -52,16 +54,20 @@ class Preprocessor(threading.Thread):
         self.thread_id = id
         self._stop_event = threading.Event()
 
-        # for obj
-        self.mini_obj = mini_obj
-        self.mini_queue = mini_queue
-        self.is_full_size =is_full_size
-
         # for few-shot param.
         self.n_way = n_way
         self.n_shot = n_shot
         self.n_query = n_query
 
+        # for obj
+        self.is_full_size = is_full_size
+        if self.is_full_size:
+            self.mini_obj = mini_obj.task_generator_raw(
+                n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train')
+        else:
+            self.mini_obj = mini_obj
+        self.mini_queue = mini_queue        
+        
         threading.Thread.__init__(self)
 
     def stop(self):
@@ -80,7 +86,8 @@ class Preprocessor(threading.Thread):
         while True:
             # for mini
             if self.is_full_size:
-                mini_sup, mini_qu = self.mini_obj.get_task_from_raw(n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train')
+                # mini_sup, mini_qu = self.mini_obj.get_task_from_raw(n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train')
+                mini_sup, mini_qu = next(self.mini_obj)
             else:
                 mini_sup, mini_qu = self.mini_obj.get_task(n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query, aug=True, mode='train')
             
@@ -120,7 +127,6 @@ def restore_from_pretrain(sess, checkpoint):
         print("Pretrained checkpoint not found: {}".format(checkpoint))
         return False
 
-
 def load_pytorch_weights(sess, weight_path):
     if weight_path:
         print("Load pytorch weights from: {}".format(weight_path))
@@ -144,6 +150,7 @@ def main(args):
     n_query = args.n_query
     n_query_test = args.n_query_test
     test_iter = args.test_iter
+    n_episode = args.n_episode
     resume_epoch = args.resume_epoch
     
     full_size = args.full_size    
@@ -183,13 +190,11 @@ def main(args):
     log_path = os.path.join(rahul_path, args.log_path, '_'.join((args.test_name, 'lr'+str(args.lr))))
     lastest_checkpoint = tf.train.latest_checkpoint(log_path)
     
-    regular_checkpoint_file = os.path.join(log_path, "checkpoint.ckpt")
     best_checkpoint_path = os.path.join(log_path, 'best_performance')
 
     ## pre-train weights
     pytorch_weight_path = '/data/rahul/workspace/cross-domain-few-shot/cross-domain-few-shot/model/baseline/399.tar'  # or best_model.tar
-    # pytorch_weight_path = '/data/rahul/workspace/cross-domain-few-shot/CrossDomainFewShot/output/checkpoints/mini_Cub/best_model.tar'  # or best_model.tar
-
+    
     ## load data
     # load Mini-ImageNet
     if full_size:
@@ -219,8 +224,8 @@ def main(args):
         # file_writer_test = tf.summary.FileWriter(os.path.join(log_path, "test"), sess.graph)
 
         # store variables
-        s_imgs = tf.summary.image("Support a image", support_a_reshape[:4], max_outputs=4)
-        q_imgs = tf.summary.image("Query b image", query_b_reshape[:4], max_outputs=4) 
+        s_imgs = tf.summary.image("Support a image", support_a_reshape[:2], max_outputs=2)
+        q_imgs = tf.summary.image("Query b image", query_b_reshape[:2], max_outputs=2) 
         x_loss = tf.summary.scalar("Classification loss", model.x_loss)
         x_acc = tf.summary.scalar("Accuracy", model.x_acc)
         
@@ -248,14 +253,13 @@ def main(args):
             restore_from_checkpoint(sess, regular_saver, lastest_checkpoint)
         else:
             print("Train from {} step".format(resume_epoch))
-        # tensorflow_checkpoint = tf.train.latest_checkpoint(weight_path)
-        # restore_from_checkpoint(sess, regular_saver, tensorflow_checkpoint)
-    
+        
         preprocess_time = 0
         train_time = 0
 
         best_val_acc = 0
-        final_acc = np.empty((test_iter, 2))
+        final_acc = np.empty((n_episode)) # np.empty((test_iter, 2))
+        final_loss = np.empty((n_episode))
         for i_iter in range(resume_epoch, args.n_iter):
 
             start = timeit.default_timer()
@@ -279,7 +283,7 @@ def main(args):
             train_time += (stop - start) 
             
             # evaluation
-            if i_iter % 100 == 0:
+            if (i_iter + 1) % 100 == 0:
                 summary_train, loss, acc = sess.run([merged, model.x_loss, model.x_acc], feed_dict={
                     support_a: support,
                     query_b: query,
@@ -309,60 +313,49 @@ def main(args):
                 print('Iteration: %d' % (i_iter+1))
                 print('train cost: %g, train acc: %g' % (loss, acc))
                 print('eval cost: %g, eval acc: %g' % (val_loss, val_acc))
-                # print('CUB cost: %g, CUB acc: %g' % (cub_loss, cub_acc))
                 print("==> Preporcess time: ", preprocess_time/(i_iter+1))
                 print("==> Train time: ", train_time/(i_iter+1))
+                
+                # evaluate on n_episode tasks
+                iter_pbar = tqdm(range(n_episode))
+                for i in iter_pbar:
+                    if full_size:
+                        support, query = dataset.get_task_from_raw(n_way, n_shot, n_query, aug=False, mode='val')
+                    else:
+                        support, query = dataset.get_task(n_way, n_shot, n_query, aug=False, mode='val')
+                    val_loss, val_acc = sess.run([model.x_loss, model.x_acc], feed_dict={
+                        support_a: support,
+                        query_b: query,
+                        labels_input: train_labels,
+                        n_query_input: n_query,
+                        is_training: False
+                    })
 
-                if val_acc > 0.8:
-                    # compute accuracy on several randomly generated task from mini-ImageNet and CUB
-                    iter_pbar = tqdm(range(test_iter))
-                    for i in iter_pbar:
-                        # get task from test
-                        if full_size:
-                            support, query = dataset.get_task_from_raw(n_way, n_shot, n_query_test, aug=False, mode='test')
-                        else:
-                            support, query = dataset.get_task(n_way, n_shot, n_query_test, aug=False, mode='test')
-                        test_acc = sess.run([model.x_acc], feed_dict={
-                            support_a: support,
-                            query_b: query,
-                            labels_input: test_labels,
-                            n_query_input: n_query_test,
-                            is_training: False
-                        })
-
-                        cub_support, cub_query = cub.get_task_from_raw(n_way, n_shot, n_query_test, aug=False, mode='test')
-                        cub_acc = sess.run([model.x_acc], feed_dict={
-                            support_a: cub_support,
-                            query_b: cub_query,
-                            labels_input: test_labels,
-                            n_query_input: n_query_test,
-                            is_training: False
-                        })
-                        final_acc[i] = np.concatenate([test_acc, cub_acc])
+                    final_loss[i] = val_loss
+                    final_acc[i] = val_acc
                     
-                    mean_acc = mean(final_acc, axis=0)
-                    confidence = 0.95
-                    std_err = sem(final_acc)
-                    h = std_err * t.ppf((1 + confidence) / 2, test_iter - 1)
+                mean_loss = mean(final_loss, axis=0)
+                mean_acc = mean(final_acc, axis=0)
+                confidence = 0.95
+                std_err = sem(final_acc)
+                h = std_err * t.ppf((1 + confidence) / 2, n_episode - 1)
                         
-                    print('Overall mini-ImageNet acc: {}+-{}%'.format(mean_acc[0], h[0]))
-                    print('Overall CUB acc: {}+-{}%'.format(mean_acc[1], h[1]))
-
-                    # save checkpoint
-                    ckpt_name = "val_acc_" + str(val_acc) + "_loss_" + str(np.round(val_loss, 4)) + \
-                        "_mini_" + str(np.round(mean_acc[0], 4)) + "_cub_" + str(np.round(mean_acc[1], 4)) + ".ckpt"
-                    best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
+                print('{} mini-ImageNet acc: {}+-{} %'.format(n_episode, mean_acc, h))
                     
-                    # save best checkpoint
-                    if val_acc > best_val_acc:
-                        best_val_acc = val_acc
-                        ckpt_name = "val_acc_" + str(val_acc) + "_loss_" + str(np.round(val_loss, 4)) + ".ckpt"
-                        best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))
-                        print("=== Save checkpoint! Best val acc: {}===".format(best_val_acc))
+                # save best checkpoint
+                if mean_acc > best_val_acc:
+                    best_val_acc = mean_acc
+                    ckpt_name = 'best'
+                    best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name))
+                    print("=== Save best model! ===")
+                    print("Best val loss: {}".format(mean_loss))
+                    print("Best val acc: {}".format(mean_acc))
                                     
-            # save session every 2000 iteration
-            if (i_iter+1) % 2000 == 0:    
-                regular_saver.save(sess, regular_checkpoint_file, global_step=(i_iter+1))
+            # save session every several iterations
+            if (i_iter+1) % 2500 == 0:    
+                best_val_acc = mean_acc
+                ckpt_name = "val_acc_" + str(mean_acc) + "_loss_" + str(np.round(mean_loss, 4)) + ".ckpt"
+                regular_saver.save(sess, os.path.join(log_path, ckpt_name), global_step=(i_iter+1))
                 print('Save session at step %d' % (i_iter+1))
         
         pre_thread.stop()
