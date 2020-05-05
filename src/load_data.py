@@ -45,6 +45,7 @@ class Cars(object):
                     if label_name not in list(meta[mode].keys()):
                         meta[mode][label_name] = []
                     meta[mode][label_name].append(image_name)
+                f.close()
         return meta
 
     def get_task_from_raw(self, n_way, n_shot, n_query, size=(224, 224), aug=True, mode='train'):
@@ -99,6 +100,7 @@ class Places(object):
                     if label_name not in list(meta[mode].keys()):
                         meta[mode][label_name] = []
                     meta[mode][label_name].append(image_name)
+                f.close()
         return meta
 
     def get_task_from_raw(self, n_way, n_shot, n_query, size=(224, 224), aug=True, mode='train'):
@@ -153,6 +155,7 @@ class Plantae(object):
                     if label_name not in list(meta[mode].keys()):
                         meta[mode][label_name] = []
                     meta[mode][label_name].append(image_name)
+                f.close()
         return meta
 
     def get_task_from_raw(self, n_way, n_shot, n_query, size=(224, 224), aug=True, mode='train'):
@@ -207,6 +210,7 @@ class Cub(object):
                     if label_name not in list(meta[mode].keys()):
                         meta[mode][label_name] = []
                     meta[mode][label_name].append(image_name)
+                f.close()
         return meta
 
     def get_task_from_raw(self, n_way, n_shot, n_query, size=(224, 224), aug=True, mode='train'):
@@ -248,6 +252,7 @@ class Pacs(object):
         data_path = os.path.join(self.data_path, 'pacs_split.pickle')
         with open(data_path, 'rb') as f:
             data_dict = pickle.load(f)
+            f.close()
         return data_dict
 
     def get_task(self, domain, categories, n_shot=5, n_query=15, size=(224, 224), aug=True, mode='train', target='all'):
@@ -285,6 +290,7 @@ class Omniglot(object):
         data_path = os.path.join(self.data_path, 'omniglot.pickle')
         with open(data_path, 'rb') as f:
             data_dict = pickle.load(f)
+            f.close()
 
         data_dict = self._normalize(data_dict)
         data_dict = self._concat(data_dict)
@@ -503,10 +509,13 @@ class MiniImageNet(object):
         data_dict = {}
         with open(train_data_path, 'rb') as f:
             data_dict['train'] = pickle.load(f)
+            f.close()
         with open(test_data_path, 'rb') as f:
             data_dict['test'] = pickle.load(f)
+            f.close()
         with open(val_data_path, 'rb') as f:
             data_dict['val'] = pickle.load(f)
+            f.close()
 
         if self.resize:
             data_dict = self._resize(data_dict)
