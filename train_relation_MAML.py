@@ -1,6 +1,7 @@
 # deep learning framework
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
+import torch
 
 # computation
 import numpy as np
@@ -17,6 +18,7 @@ import argparse
 import src.load_data
 from src.load_data import Pacs, Cub, Omniglot, MiniImageNet
 from src.model import RelationNet
+from src.model_utils import load_weights
 
 # miscellaneous
 import gc
@@ -98,6 +100,9 @@ class Preprocessor(threading.Thread):
 
             self.train_queue.put((train_sup, train_qu))
             
+            train_sup, train_qu = self.train_obj.get_task(n_way=self.n_way, n_shot=self.n_shot, n_query=self.n_query)
+            self.train_queue.put((train_sup, train_qu))
+            
             # for meta
             meta_sup, meta_qu = [], []
             if not self.multi_tasks:
@@ -158,25 +163,11 @@ def main(args):
 
     support_x = tf.placeholder(tf.float32, shape=[n_way, n_shot, img_h, img_w, 3])  
     query_x = tf.placeholder(tf.float32, shape=[n_way, n_query, img_h, img_w, 3])
+    support_xa = tf.placeholder(tf.float32, shape=[n_way, n_shot, img_h, img_w, 3])  
+    query_xb = tf.placeholder(tf.float32, shape=[n_way, n_query, img_h, img_w, 3])    
     support_a = tf.placeholder(tf.float32, shape=[None, n_way, n_shot, img_h, img_w, 3])  
     query_b = tf.placeholder(tf.float32, shape=[None, n_way, n_query, img_h, img_w, 3])
     is_training = tf.placeholder(tf.bool)
-
-    #train_support = tf.placeholder(tf.float32, shape=[n_way, n_shot, img_h, img_w, 3])  
-    #train_query = tf.placeholder(tf.float32, shape=[n_way, n_query, img_h, img_w, 3])
-    #test_support = tf.placeholder(tf.float32, shape=[n_way, n_shot, img_h, img_w, 3])  
-    #test_query = tf.placeholder(tf.float32, shape=[n_way, n_query, img_h, img_w, 3])
-
-    # reshape
-    #support_x_reshape = tf.reshape(support_x, [n_way * n_shot, img_h, img_w, 3])
-    #query_x_reshape = tf.reshape(query_x, [n_way * n_query, img_h, img_w, 3])
-    #support_a_reshape = tf.reshape(support_a, [len(meta_domains), n_way * n_shot, img_h, img_w, 3])
-    #query_b_reshape = tf.reshape(query_b, [len(meta_domains), n_way * n_query, img_h, img_w, 3])
-
-    #train_support_reshape = tf.reshape(train_support, [n_way * n_shot, img_h, img_w, 3])
-    #train_query_reshape = tf.reshape(train_query, [n_way * n_query, img_h, img_w, 3])
-    #test_support_reshape = tf.reshape(test_support, [n_way * n_shot, img_h, img_w, 3])
-    #test_query_reshape = tf.reshape(test_query, [n_way * n_query, img_h, img_w, 3])
 
     labels_input = tf.placeholder(tf.int64, shape=[None])
 
@@ -191,14 +182,10 @@ def main(args):
                         backbone='resnet', is_training=is_training)
     model.build_maml(n_way, n_shot, n_query,
                      support_x=support_x, query_x=query_x, 
+                     support_xa=support_xa, query_xb=query_xb,
                      support_a=support_a, query_b=query_b,
                      labels=labels_input, first_lr=alpha, multi_tasks=multi_tasks)
-    '''
-    model.build_maml_val(n_way, n_shot, n_query,
-                     train_support=train_support, train_query=train_query, 
-                     test_support=test_support, test_query=test_query,
-                     labels=labels_input, first_lr=alpha)
-    '''
+
     model_summary()
 
     # saver for saving session
@@ -247,6 +234,20 @@ def main(args):
             print("Pretrained checkpoint not found: {}".format(checkpoint))
             return False
 
+    def load_pytorch_weights(sess, weight_path):
+        if weight_path:
+            print("Load pytorch weights from: {}".format(weight_path))
+            tmp = torch.load(weight_path)
+            pytorch_weights = {}
+            for key, value in tmp['state'].items():
+                weights = torch.Tensor.cpu(value)
+                pytorch_weights[key] = weights.data.numpy()
+
+            load_weights(sess, pytorch_weights)
+            print("===Done===")
+        else:
+            print('Pytorch weights are not found')
+
     print("\n=== Load data...")
     # make queue
     train_queue = queue.Queue(maxsize = 10)
@@ -285,39 +286,33 @@ def main(args):
         # store variables
         with tf.name_scope('Train_summary'):
 
-            tf.summary.image("Support x image", support_x[0], max_outputs=4, collections=['train', 'val'])
-            tf.summary.image("Query x image", query_x[0], max_outputs=4, collections=['train', 'val'])
+            #tf.summary.image("Support x image", support_x[0], max_outputs=4, collections=['train', 'val'])
+            #tf.summary.image("Query x image", query_x[0], max_outputs=4, collections=['train', 'val'])
             tf.summary.scalar("x loss", model.x_loss, collections=['train', 'val'])
             tf.summary.scalar("x acc", model.x_acc, collections=['train', 'val'])
 
-            tf.summary.image("Support a image", support_a[0][0], max_outputs=4, collections=['train', 'val'])
-            tf.summary.image("Query b image", query_b[0][0], max_outputs=4, collections=['train', 'val'])
+            tf.summary.scalar("xab loss", model.xab_loss, collections=['train'])
+            tf.summary.scalar("xab acc", model.xab_acc, collections=['train'])
+
+            #tf.summary.image("Support a image", support_a[0][0], max_outputs=4, collections=['train', 'val'])
+            #tf.summary.image("Query b image", query_b[0][0], max_outputs=4, collections=['train', 'val'])
             tf.summary.scalar("ab loss", model.ab_loss, collections=['train', 'val'])
             tf.summary.scalar("ab acc", model.ab_acc, collections=['train', 'val'])        
 
+            tf.summary.scalar("total loss", model.total_loss, collections=['train'])        
+
             train_merged = tf.summary.merge_all('train')
             val_merged = tf.summary.merge_all('val')
-        '''
-        with tf.name_scope('Test_summary'):
 
-            tf.summary.image("Train Support image", train_support[0], max_outputs=4, collections=['test'])
-            tf.summary.image("Train Query image", train_query[0], max_outputs=4, collections=['test'])
-            tf.summary.scalar("maml_train_loss", model.maml_train_loss, collections=['test'])
-            tf.summary.scalar("maml_train_acc", model.maml_train_acc, collections=['test'])
-
-            tf.summary.image("Test Support image", test_support[0], max_outputs=4, collections=['test'])
-            tf.summary.image("Test Query image", test_query[0], max_outputs=4, collections=['test'])
-            tf.summary.scalar("maml_test_loss", model.maml_test_loss, collections=['test'])
-            tf.summary.scalar("maml_test_acc", model.maml_test_acc, collections=['test'])
-
-            test_merged = tf.summary.merge_all('test')
-        '''
         sess.run(init)
         print("\n=== Ckeck pretrained model...")
         if lastest_checkpoint:
             restore_from_checkpoint(sess, regular_saver, lastest_checkpoint)
         elif pretrain:
             restore_from_pretrain(sess, pretrain_ckeckpoint)
+        else:
+            pytorch_weight_path = '/data/rahul/workspace/cross-domain-few-shot/cross-domain-few-shot/model/baseline/399.tar'  # or best_model.tar
+            load_pytorch_weights(sess, pytorch_weight_path)
 
         print("\n=== Start training...")
         preprocess_time = 0
@@ -328,7 +323,14 @@ def main(args):
 
             start = timeit.default_timer()
             # mini-imagenet ======================================================================
-            curr_support_x, curr_query_x = train_queue.get()
+            while True:
+                if not train_queue.empty():
+                    curr_support_x, curr_query_x = train_queue.get()
+                    break
+            while True:
+                if not train_queue.empty():                
+                    curr_support_xa, curr_query_xb = train_queue.get()
+                    break
 
             # meta ===============================================================================
             curr_support_a, curr_query_b = meta_queue.get()
@@ -341,6 +343,8 @@ def main(args):
             sess.run([model.meta_op], feed_dict={
                 support_x: curr_support_x,
                 query_x: curr_query_x,
+                support_xa: curr_support_xa,
+                query_xb: curr_query_xb,                
                 support_a: curr_support_a,
                 query_b: curr_query_b,                
                 labels_input: labels,
@@ -358,6 +362,8 @@ def main(args):
                     feed_dict={
                         support_x: curr_support_x,
                         query_x: curr_query_x,
+                        support_xa: curr_support_xa,
+                        query_xb: curr_query_xb,                          
                         support_a: curr_support_a,
                         query_b: curr_query_b,
                         labels_input: labels,
@@ -365,9 +371,6 @@ def main(args):
                     })
                 
                 # monitor validation
-                # get task from validation set of mini-ImageNet
-                # TODO: cross domain in task
-                #curr_support_x, curr_query_x = mini.get_task(n_way, n_shot, n_query, aug=False, mode='val')
                 selected_domain = random.sample(meta_domains, k=1)[0] 
                 val_support_x, val_query_x = meta[selected_domain].get_task_from_raw(n_way, n_shot, n_query, aug=False, mode='train')
                 val_support_a, val_query_b = meta[selected_domain].get_task_from_raw(n_way, n_shot, n_query, aug=False, mode='val')
@@ -382,34 +385,18 @@ def main(args):
                         labels_input: labels,
                         is_training: False
                     })
-                '''
-                # get task from unseen domain (CUB) done
-                curr_train_support, curr_train_query = test_obj.get_task_from_raw(n_way, n_shot, n_query, aug=False, mode='train')
-                curr_test_support, curr_test_query = test_obj.get_task_from_raw(n_way, n_shot, n_query, aug=False, mode='test')
-                summary_test, maml_test_loss, maml_test_acc = \
-                    sess.run([test_merged, model.maml_test_loss, model.maml_test_acc], 
-                    feed_dict={
-                        train_support: curr_train_support,
-                        train_query: curr_train_query,
-                        test_support: curr_test_support,
-                        test_query: curr_test_query,                        
-                        labels_input: labels,
-                        is_training: False
-                    })
-                '''
+
                 # log all variables
                 file_writer_train.add_summary(summary_train, global_step=i_iter)
                 file_writer_val.add_summary(summary_val, global_step=i_iter)
-                #file_writer_test.add_summary(summary_test, global_step=i_iter)
 
                 print('Iteration: %d' % (i_iter+1))
                 print('train x: [%f, %f], train ab: [%f, %f]' % (train_x_loss, train_x_acc, train_ab_loss, train_ab_acc))
                 print('val x: [%f, %f], val ab: [%f, %f]' % (val_x_loss, val_x_acc, val_ab_loss, val_ab_acc))
-                #print('==> CUB: [%f, %f]' % (maml_test_loss, maml_test_acc))
                 print("==> Preporcess time: ", preprocess_time/(i_iter+1))
                 print("==> Train time: ", train_time/(i_iter+1))
 
-                if val_ab_loss < 0.9 and val_ab_loss < best_val_loss:
+                if val_ab_loss < 0.9 and val_ab_loss < best_val_loss and (i_iter+1) > 18000:
                     best_val_loss = val_ab_loss
                     ckpt_name = "val_acc_" + str(val_x_acc) + "_loss_" + str(val_ab_loss) + ".ckpt"
                     best_saver.save(sess, os.path.join(best_checkpoint_path , ckpt_name), global_step=(i_iter+1))

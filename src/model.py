@@ -314,13 +314,19 @@ class RelationNet(object):
         self.meta_op = tf.train.AdamOptimizer(
             self.gamma, name="meta_opt").minimize(self.total_loss, global_step=global_step)
 
-    def build_maml(self, n_way, n_shot, n_query, support_x, query_x, support_a, query_b, labels, first_lr, multi_tasks=False):
+    def build_maml(self, n_way, n_shot, n_query, 
+                    support_x, query_x, 
+                    support_xa, query_xb, 
+                    support_a, query_b, 
+                    labels, first_lr, multi_tasks=False):
         
         img_h, img_w = support_x.get_shape()[2], support_x.get_shape()[3]
         #num_domains = support_a.get_shape()[0]
 
         support_x = tf.reshape(support_x, [n_way * n_shot, img_h, img_w, 3])
         query_x = tf.reshape(query_x, [n_way * n_query, img_h, img_w, 3])
+        support_xa = tf.reshape(support_xa, [n_way * n_shot, img_h, img_w, 3])
+        query_xb = tf.reshape(query_xb, [n_way * n_query, img_h, img_w, 3])        
         support_a = tf.reshape(support_a, [-1, n_way * n_shot, img_h, img_w, 3])
         query_b = tf.reshape(query_b, [-1, n_way * n_query, img_h, img_w, 3])
 
@@ -371,6 +377,29 @@ class RelationNet(object):
 
         # use theta_pi to forward meta-test - for support a & query b =================================================================
         self.ab_loss, self.ab_acc = [], []   
+
+        support_xa_encode = self.resnet10_encoder_meta(support_xa, fast_res10_weights, is_training=self.is_training)
+
+        h, w, c = support_xa_encode.get_shape().as_list()[1:]
+        support_xa_encode = tf.reduce_mean(tf.reshape(support_xa_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_xa_encode = tf.tile(tf.expand_dims(support_xa_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
+
+        query_xb_encode = self.resnet10_encoder_meta(query_xb, fast_res10_weights, is_training=self.is_training)
+        
+        query_xb_encode = tf.tile(tf.expand_dims(query_xb_encode, axis=0), [n_way, 1, 1, 1, 1])
+        query_xb_encode = tf.transpose(query_xb_encode, perm=[1, 0, 2, 3, 4])
+
+        relation_xab_pairs = tf.concat([support_xa_encode, query_xb_encode], -1)
+        relation_xab_pairs = tf.reshape(relation_xab_pairs, shape=[-1, h, w, c*2])        
+
+        # build relation network - for support a & query b
+        relations_xab = self.relation_module_meta(relation_xab_pairs, fast_relation_weights, is_training=self.is_training)  # [75*5, 1]
+        relations_xab = tf.reshape(relations_xab, [-1, n_way])  # [75, 5]
+
+        # ab loss & acc
+        self.xab_loss = self.ce_loss(y_pred=relations_xab, y_true=one_hot_labels)
+        self.xab_acc = tf.reduce_mean(tf.to_float(tf.equal(tf.argmax(relations_xab, axis=-1), labels)))
+
         if multi_tasks and self.is_training:
             num_domains = 3
         else:
@@ -400,7 +429,7 @@ class RelationNet(object):
 
         self.ab_loss = tf.reduce_mean(self.ab_loss)
         self.ab_acc = tf.reduce_mean(self.ab_acc)
-        self.total_loss = self.x_loss + self.beta * self.ab_loss
+        self.total_loss = self.xab_loss  + self.beta * self.ab_loss
         
         global_step = tf.Variable(0, trainable=False, name='global_step')
         if self.decay is not None:
@@ -530,7 +559,7 @@ class RelationNet(object):
 
         img_h, img_w = train_support.get_shape()[2], train_support.get_shape()[3]
 
-        train_support = tf.reshape(train_support, [n_way * n_shot, img_h, img_w, 3])
+        train_support = tf.reshape(train_support, [n_way * (n_shot-n_query), img_h, img_w, 3])
         train_query = tf.reshape(train_query, [n_way * n_query, img_h, img_w, 3])
 
         ### build model
@@ -545,7 +574,7 @@ class RelationNet(object):
         support_encode = self.resnet10_encoder_meta(train_support, res10_weights, is_training=self.is_training)
 
         h, w, c = support_encode.get_shape().as_list()[1:]
-        support_encode = tf.reduce_mean(tf.reshape(support_encode, [n_way, n_shot, h, w, c]), axis=1)
+        support_encode = tf.reduce_mean(tf.reshape(support_encode, [n_way, (n_shot-1), h, w, c]), axis=1)
         support_encode = tf.tile(tf.expand_dims(support_encode, axis=0), [n_query * n_way, 1, 1, 1, 1]) 
 
         query_encode = self.resnet10_encoder_meta(train_query, res10_weights, is_training=self.is_training)

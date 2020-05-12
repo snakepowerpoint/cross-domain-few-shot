@@ -732,10 +732,13 @@ def augmentation(img, size):
         return ((img / 255.0) - mean) / std
     
     img = Image.fromarray(img)
-    _random_resized_crop = RandomResizedCrop(size=size)
+    #_random_resized_crop = RandomResizedCrop(size=size)
+    _random_resized_crop = RandomResizedCrop(size=84)
     img = _random_resized_crop(img)
     img = jitter(img)
-    img = np.array(img) # wei, use PIL lib to resize here
+    img = img.resize(size) ### wei
+    #img = np.array(img) 
+    img = np.asarray(img) 
     img = random_horizontal_flip(img)
     img = normalize(img)
     return img  # np.array([w,h]) -> [h, w]
@@ -756,7 +759,7 @@ def center_crop(img, size):
     # Crop the center of the image
     img = img.crop((left, top, right, bottom))
     img = img.resize(size)
-    return np.array(img)  # np.array([w,h]) -> [h,w]
+    return np.asarray(img)  # np.array([w,h]) -> [h,w]
 
 def define_dir_by_mac():
     interfaces = netifaces.interfaces()
